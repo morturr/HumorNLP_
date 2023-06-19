@@ -64,8 +64,21 @@ class DataPreprocessing:
             df_new['label'] = df.apply(lambda row: 1 if row['meanGrade'] >= 1 else 0, axis=1)
             df_new.to_csv(f'./humor_datasets/headlines/{split}.csv', index=False)
 
+    @staticmethod
+    def load_twss():
+        path = './original_datasets/twss/all_data.csv'
+        df_new = pd.read_csv(path)
+        df_new = df_new[df_new['sentence'].notna()]
+
+        df_new.to_csv('./humor_datasets/twss/data.csv', index=False)
+
+        train, test = train_test_split(df_new, test_size=0.2, shuffle=True)
+        train.to_csv('./humor_datasets/twss/train.csv', index=False)
+        test.to_csv('./humor_datasets/twss/test.csv', index=False)
+
 
 if __name__ == '__main__':
     pass
     # DataPreprocessing.load_headlines()
     # DataPreprocessing.load_amazon()
+    DataPreprocessing.load_twss()
