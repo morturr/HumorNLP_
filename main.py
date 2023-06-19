@@ -17,7 +17,7 @@ if __name__ == '__main__':
     # load datasets
     print_str('STARTED RUN')
     dpp = DataPreprocessing()
-    dataset_names = ['amazon', 'headlines']
+    dataset_names = ['amazon', 'headlines', 'twss', 'igg']
     data_path = 'Data/humor_datasets/'
     for name in dataset_names:
         dpp.load_data(data_path + name, name)

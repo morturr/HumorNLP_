@@ -97,4 +97,5 @@ class HumorTrainer:
     def save_model(self, path):
         if not os.path.exists(path):
             os.mkdir(path)
-        self._trainer.save_model(path + self._model_params['model'])
+        model_path = '{0}/{1}_on_{2}'.format(path, self._model_params['model'], self._train_on)
+        self._trainer.save_model(model_path)
