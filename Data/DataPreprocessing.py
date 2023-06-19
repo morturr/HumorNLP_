@@ -76,9 +76,28 @@ class DataPreprocessing:
         train.to_csv('./humor_datasets/twss/train.csv', index=False)
         test.to_csv('./humor_datasets/twss/test.csv', index=False)
 
+    @staticmethod
+    def load_igg():
+        path = './original_datasets/igg/all_data.csv'
+        df = pd.read_csv(path)
+
+        df_new = pd.DataFrame()
+        df_new['sentence'] = df['title']
+        df_new['label'] = df['label']
+        df_new['idx'] = df['id']
+        df_new = df_new[df_new['sentence'].notna()]
+        df_new = df_new.sample(frac=1, random_state=0)
+
+        df_new.to_csv('./humor_datasets/igg/data.csv', index=False)
+
+        train, test = train_test_split(df_new, test_size=0.2, shuffle=True)
+        train.to_csv('./humor_datasets/igg/train.csv', index=False)
+        test.to_csv('./humor_datasets/igg/test.csv', index=False)
+
 
 if __name__ == '__main__':
     pass
     # DataPreprocessing.load_headlines()
     # DataPreprocessing.load_amazon()
-    DataPreprocessing.load_twss()
+    # DataPreprocessing.load_twss()
+    DataPreprocessing.load_igg()
