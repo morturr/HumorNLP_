@@ -7,13 +7,12 @@ from Model.HumorTrainer import HumorTrainer
 from Utils.utils import print_str, my_parse_args
 from datetime import datetime
 
-
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 wandb.login(key='94ee7285d2d25226f2c969e28645475f9adffbce')
 logger = logging.getLogger(__name__)
 
-
 if __name__ == '__main__':
+
     # load datasets
     print_str('STARTED RUN')
     dpp = DataPreprocessing()
@@ -40,9 +39,16 @@ if __name__ == '__main__':
         h_predictor.predict(name)
 
     date_str = str(datetime.now().date())
-    h_predictor.write_predictions(f'Data/output/predictions/{date_str}')
+    model_path = 'Data/output/models/{0}/{1}_on_{2}'.format(date_str,
+                                                            model_params['model'],
+                                                            model_params['train_on_dataset'])
+    predictions_path = 'Data/output/predictions/{0}/{1}_on_{2}'.format(date_str,
+                                                                       model_params['model'],
+                                                                       model_params['train_on_dataset'])
+
+    h_predictor.write_predictions(predictions_path)
 
     # save model
-    h_trainer.save_model(f'Data/output/models/{date_str}')
+    h_trainer.save_model(model_path)
 
     print_str('FINISHED RUN')
