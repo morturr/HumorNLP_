@@ -12,7 +12,6 @@ wandb.login(key='94ee7285d2d25226f2c969e28645475f9adffbce')
 logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
-
     # load datasets
     print_str('STARTED RUN')
     dpp = DataPreprocessing()
@@ -30,21 +29,27 @@ if __name__ == '__main__':
         'train_on_dataset': 'amazon',
         'seed': 0,
     }
+
+    time = datetime.now()
+    run_name = '{0}_on_{4}_{1}_{2}:{3}'.format(model_params['model'],
+                                               time.date(), time.hour, time.minute,
+                                               model_params['train_on_dataset'])
+    output_path = 'Model/SavedModels/{0}'.format(run_name)
+
+    wandb.init(project='HumorNLP', name=run_name)
+
     h_trainer = HumorTrainer(model_params, my_parse_args(), datasets)
     trained_model = h_trainer.train()
 
     # predict labels
-    h_predictor = HumorPredictor(trained_model, h_trainer.get_datasets(), h_trainer.get_tokenizer())
+    h_predictor = HumorPredictor(trained_model, h_trainer.get_test_datasets(), h_trainer.get_tokenizer())
     for name in dataset_names:
         h_predictor.predict(name)
 
     date_str = str(datetime.now().date())
-    model_path = 'Data/output/models/{0}/{1}_on_{2}'.format(date_str,
-                                                            model_params['model'],
-                                                            model_params['train_on_dataset'])
-    predictions_path = 'Data/output/predictions/{0}/{1}_on_{2}'.format(date_str,
-                                                                       model_params['model'],
-                                                                       model_params['train_on_dataset'])
+
+    model_path = output_path + '/model'
+    predictions_path = output_path + '/predictions'
 
     h_predictor.write_predictions(predictions_path)
 

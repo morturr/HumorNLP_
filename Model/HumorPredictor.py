@@ -1,10 +1,14 @@
 from transformers import TextClassificationPipeline
 import pandas as pd
 import os
-from Utils.utils import print_str
+from Utils.utils import print_str, print_cur_time
 from os.path import exists
 
 
+# ===============================      Global Variables:      ===============================
+
+
+# ====================================      Class:      ====================================
 class HumorPredictor:
     def __init__(self, model, datasets, tokenizer):
         self.model = model
@@ -18,17 +22,19 @@ class HumorPredictor:
 
     def predict(self, predict_on_dataset):
         print_str('STARTED PREDICT ON {0}'.format(predict_on_dataset))
-        self.preds[predict_on_dataset] = self.classifier(self.datasets[predict_on_dataset]['test']['sentence'],
+        print_cur_time('before predict')
+        self.preds[predict_on_dataset] = self.classifier(self.datasets[predict_on_dataset]['sentence'],
                                                          batch_size=1)
+        print_cur_time('after predict')
         print_str('FINISHED PREDICT ON {0}'.format(predict_on_dataset))
         return self.preds[predict_on_dataset]
 
     def write_predictions(self, path):
         if not os.path.exists(path):
-            os.mkdir(path)
+            os.makedirs(path, exist_ok=True)
         for dataset_name, preds in self.preds.items():
             preds_dict = pd.DataFrame.from_dict(preds)
-            preds_dict['sentence'] = self.datasets[dataset_name]['test']['sentence']
+            preds_dict['sentence'] = self.datasets[dataset_name]['sentence']
             preds_dict['label'] = preds_dict['label'].apply(lambda s: s[-1])
             preds_dict.to_csv(f'{path}/{dataset_name}_preds.csv')
 

@@ -9,8 +9,8 @@ class DataPreprocessing:
         self.datasets = {}
 
     def load_data(self, path, dataset_name):
-        train_path = f'{path}/train.csv'
-        test_path = f'{path}/test.csv'
+        train_path = f'{path}/{dataset_name}/train.csv'
+        test_path = f'{path}/{dataset_name}/test.csv'
 
         if os.path.exists(train_path) and os.path.exists(test_path):
             train, test = pd.read_csv(train_path), pd.read_csv(test_path)
@@ -26,6 +26,31 @@ class DataPreprocessing:
 
     def get_datasets(self):
         return self.datasets
+
+    @staticmethod
+    def balance_train(path, datasets):
+        for dataset in datasets:
+            curr_path = path + dataset + '/'
+            train = pd.read_csv(curr_path + 'train.csv')
+            test = pd.read_csv(curr_path + 'test.csv')
+
+            train_label_1 = train[train['label'] == 1]
+            train_label_0 = train[train['label'] == 0]
+            larger_df = train_label_1 if len(train_label_1) > len(train_label_0) else train_label_0
+            shorter_df = train_label_0 if len(train_label_1) > len(train_label_0) else train_label_1
+            labels_diff = abs(len(train_label_1) - len(train_label_0))
+
+            if labels_diff > 0:
+                os.makedirs(curr_path + 'before_balance/', exist_ok=True)
+                test.to_csv(curr_path + 'before_balance/' + 'test.csv')
+                train.to_csv(curr_path + 'before_balance/' + 'train.csv')
+                test = test.append(larger_df.iloc[:labels_diff], ignore_index=True)
+                larger_df = larger_df.iloc[labels_diff:]
+                test = test.sample(frac=1, random_state=0, ignore_index=True)
+                train = larger_df.append(shorter_df)
+                train = train.sample(frac=1, random_state=0, ignore_index=True)
+                test.to_csv(curr_path + 'test.csv')
+                train.to_csv(curr_path + 'train.csv')
 
     @staticmethod
     def load_amazon():
@@ -97,7 +122,16 @@ class DataPreprocessing:
 
 if __name__ == '__main__':
     pass
+
+
+    ## constructing datasets
     # DataPreprocessing.load_headlines()
     # DataPreprocessing.load_amazon()
     # DataPreprocessing.load_twss()
-    DataPreprocessing.load_igg()
+    # DataPreprocessing.load_igg()
+
+    ## balance train
+    data_path = './humor_datasets/'
+    datasets_names = ['amazon', 'headlines', 'igg', 'twss']
+    # datasets_names = ['amazon']
+    DataPreprocessing.balance_train(data_path, datasets_names)

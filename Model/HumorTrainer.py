@@ -2,13 +2,16 @@ import numpy as np
 import os
 from datetime import datetime
 import wandb
-from Utils.utils import print_str
+import torch
+from Utils.utils import print_str, print_cur_time
 from transformers import TrainingArguments, \
     AutoModelForSequenceClassification, set_seed, EvalPrediction, Trainer, \
     AutoTokenizer, AutoConfig
 
 # ===============================      Global Variables:      ===============================
-wandb.login(key='94ee7285d2d25226f2c969e28645475f9adffbce')
+# wandb.login(key='94ee7285d2d25226f2c969e28645475f9adffbce')#, relogin=True)
+# wandb.init(project='HumorNLP')
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 # ====================================      Class:      ====================================
@@ -61,6 +64,13 @@ class HumorTrainer:
     def get_datasets(self):
         return self._datasets
 
+    def get_test_datasets(self):
+        test_sets = {}
+        for dataset in self._datasets:
+            test_sets[dataset] = self.get_split_set(dataset, 'test')
+
+        return test_sets
+
     def process_datasets(self):
         for dataset in self._init_datasets:
             self._datasets[dataset] = self._init_datasets[dataset].map(self.preprocess_function, batched=True)
@@ -72,7 +82,7 @@ class HumorTrainer:
         self._config = AutoConfig.from_pretrained(self._model_params['model_dir'])
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_params['model_dir'])
         self._model = AutoModelForSequenceClassification.from_pretrained(self._model_params['model_dir'],
-                                                                         config=self._config)
+                                                                         config=self._config).to(DEVICE)
         self.process_datasets()
         # self._datasets[self._train_on] = \
         #     self._init_datasets[self._train_on].map(self.preprocess_function, batched=True)
@@ -89,12 +99,15 @@ class HumorTrainer:
         )
 
         print_str('STARTED TRAIN ON {0}'.format(self._model_params['model']))
+        print_cur_time('before_train')
         self._trainer.train()
+        print_cur_time('after_train')
+        wandb.finish()
         print_str('FINISHED TRAIN ON {0}'.format(self._model_params['model']))
 
         return self._model
 
     def save_model(self, path):
         if not os.path.exists(path):
-            os.mkdir(path)
+            os.makedirs(path, exist_ok=True)
         self._trainer.save_model(path)
