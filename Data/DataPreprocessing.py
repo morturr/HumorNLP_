@@ -9,13 +9,13 @@ class DataPreprocessing:
         self.datasets = {}
 
     def load_data(self, path, dataset_name):
-        train_path = f'{path}/{dataset_name}/train.csv'
-        test_path = f'{path}/{dataset_name}/test.csv'
+        train_path = f'{path}/train.csv'
+        test_path = f'{path}/test.csv'
 
         if os.path.exists(train_path) and os.path.exists(test_path):
             train, test = pd.read_csv(train_path), pd.read_csv(test_path)
         else:
-            raise FileExistsError('train or test file does\'nt exists')
+            raise FileExistsError('train or test file doesnt exists')
 
         # train = train.sample(frac=1).reset_index(drop=True)
         ds = DatasetDict()
@@ -94,6 +94,8 @@ class DataPreprocessing:
         path = './original_datasets/twss/all_data.csv'
         df_new = pd.read_csv(path)
         df_new = df_new[df_new['sentence'].notna()]
+        df_new = df_new.sample(frac=1, random_state=0, ignore_index=True)
+        df_new['idx'] = list(range(len(df_new)))
 
         df_new.to_csv('./humor_datasets/twss/data.csv', index=False)
 
@@ -127,11 +129,11 @@ if __name__ == '__main__':
     ## constructing datasets
     # DataPreprocessing.load_headlines()
     # DataPreprocessing.load_amazon()
-    # DataPreprocessing.load_twss()
+    DataPreprocessing.load_twss()
     # DataPreprocessing.load_igg()
 
     ## balance train
     data_path = './humor_datasets/'
-    datasets_names = ['amazon', 'headlines', 'igg', 'twss']
-    # datasets_names = ['amazon']
+    # datasets_names = ['amazon', 'headlines', 'igg', 'twss']
+    datasets_names = ['twss']
     DataPreprocessing.balance_train(data_path, datasets_names)

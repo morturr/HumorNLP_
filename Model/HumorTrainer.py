@@ -16,9 +16,10 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # ====================================      Class:      ====================================
 class HumorTrainer:
-    def __init__(self, model_params, args, datasets):
+    def __init__(self, model_params, args, datasets, run_name):
         self._model_params = model_params
         self._init_datasets = datasets
+        self._run_name = run_name
 
         self._tokenizer = None
         self._metric = None
@@ -29,7 +30,8 @@ class HumorTrainer:
         self._train_on = self._model_params['train_on_dataset']
 
         self._hf_args = TrainingArguments(output_dir='output',
-                                          save_strategy='no', report_to=['wandb'])
+                                          save_strategy='no', report_to=['wandb'],
+                                          seed=self._model_params['seed'])
 
         self._split_sizes = {'train': args.n_train_samples,
                              'test': args.n_test_samples}
@@ -53,11 +55,6 @@ class HumorTrainer:
 
         return split_dataset
 
-    def get_run_name(self):
-        time = datetime.now()
-        return '{0}_{1}_{2}:{3}_seed_{4}'.format(self._model_params['model'],
-                                                 time.date(), time.hour, time.minute, self._model_params['seed'])
-
     def get_tokenizer(self):
         return self._tokenizer
 
@@ -77,7 +74,8 @@ class HumorTrainer:
 
     def init_model(self):
         set_seed(self._model_params['seed'])
-        self._hf_args.run_name = self.get_run_name()
+        print_str('train seed = {0}'.format(self._model_params['seed']))
+        self._hf_args.run_name = self._run_name
         # TODO which tokenizer, model, config should we use?
         self._config = AutoConfig.from_pretrained(self._model_params['model_dir'])
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_params['model_dir'])
@@ -89,20 +87,25 @@ class HumorTrainer:
 
     def train(self):
         self.init_model()
+        train_dataset = self.get_split_set(self._train_on, 'train')
 
         self._trainer = Trainer(
             model=self._model,
             args=self._hf_args,
-            train_dataset=self.get_split_set(self._train_on, 'train'),
+            train_dataset=train_dataset,
             compute_metrics=self.compute_metrics,
             tokenizer=self._tokenizer
         )
 
         print_str('STARTED TRAIN ON {0}'.format(self._model_params['model']))
+
+        print_str('{0} train dataset: 0 label count = {1}, 1 label count = {2}'.format(self._train_on,
+                                                                                       train_dataset['label'].count(0),
+                                                                                       train_dataset['label'].count(1)))
+
         print_cur_time('before_train')
         self._trainer.train()
         print_cur_time('after_train')
-        wandb.finish()
         print_str('FINISHED TRAIN ON {0}'.format(self._model_params['model']))
 
         return self._model

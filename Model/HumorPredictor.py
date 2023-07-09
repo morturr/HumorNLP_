@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from Utils.utils import print_str, print_cur_time
 from os.path import exists
+from sklearn.metrics import precision_score, recall_score
 
 
 # ===============================      Global Variables:      ===============================
@@ -38,22 +39,51 @@ class HumorPredictor:
             preds_dict['label'] = preds_dict['label'].apply(lambda s: s[-1])
             preds_dict.to_csv(f'{path}/{dataset_name}_preds.csv')
 
+    def write_dataset_predictions(self, path, dataset_name):
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+        preds = self.preds[dataset_name]
+        preds_dict = pd.DataFrame.from_dict(preds)
+        preds_dict['sentence'] = self.datasets[dataset_name]['sentence']
+        preds_dict['label'] = preds_dict['label'].apply(lambda s: s[-1])
+        preds_dict.to_csv(f'{path}/{dataset_name}_preds.csv')
+
     @staticmethod
-    def compute_accuracy(pred_labels_path, test_labels_path):
-        if exists(pred_labels_path) and exists(test_labels_path):
-            preds = pd.read_csv(pred_labels_path)
-            test = pd.read_csv(test_labels_path)
-        equals = (test['label'] == preds['label']).sum()
-        return equals / len(preds)
+    def compute_accuracy(pred_y, true_y):
+        equals = (true_y['label'] == pred_y['label']).sum()
+        return equals / len(pred_y)
+
+    @staticmethod
+    def compute_recall(pred_y, true_y):
+        return recall_score(true_y['label'], pred_y['label'], average='binary')
+
+    @staticmethod
+    def compute_precision(pred_y, true_y):
+        return precision_score(true_y['label'], pred_y['label'], average='binary')
 
 
 if __name__ == '__main__':
-    dataset_names = ['amazon', 'headlines', 'twss', 'igg']
+    # dataset_names = ['amazon', 'headlines', 'twss', 'igg']
+    dataset_names = ['headlines']
     data_path = '../Data/humor_datasets/'
-    pred_path = '../Data/output/predictions/2023-06-19/'
+    model_name = 'bert_on_headlines_seed=0'
+    pred_path = '../Model/SavedModels/' + model_name + '/predictions/'
     accuracies = {}
+    recall = {}
+    precision = {}
     for dataset in dataset_names:
-        accuracies[dataset] = HumorPredictor.compute_accuracy(pred_path + f'{dataset}_preds.csv',
-                                                              data_path + f'{dataset}/test.csv')
+        pred_labels_path = pred_path + f'{dataset}_preds.csv'
+        test_labels_path = data_path + f'{dataset}/test.csv'
+        if not (exists(pred_labels_path) and exists(test_labels_path)):
+            print('didnt find preds/test path')
+            continue
 
-    print(accuracies)
+        _preds = pd.read_csv(pred_labels_path)
+        _test = pd.read_csv(test_labels_path)
+        accuracies[dataset] = HumorPredictor.compute_accuracy(_preds, _test)
+        recall[dataset] = HumorPredictor.compute_recall(_preds, _test)
+        precision[dataset] = HumorPredictor.compute_precision(_preds, _test)
+
+    print(f'accuracies = {accuracies}')
+    print(f'recall = {recall}')
+    print(f'precision = {precision}')
