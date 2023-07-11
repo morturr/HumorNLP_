@@ -22,54 +22,64 @@ if __name__ == '__main__':
 
     datasets = dpp.get_datasets()
 
-    seeds = list(range(4))
-    # seeds = [0, 1, 3, 42, 27]
-    # seeds = [3, 4]
-    train_ons = ['headlines', 'igg', 'twss']
-    # train_ons = ['amazon']
+    BATCH_SIZES = [4, 8]
+    LR_S = [3e-6, 1e-5]
+    EPOCHS = [3, 4]
+
+    seeds = [3]
+    # train_ons = ['amazon', 'headlines', 'igg', 'twss']
+    train_ons = ['headlines']
+    train_params = [{'dataset': 'amazon', 'seed': 0, 'epoch': 3, 'lr': 5e-5}]
     models = {'bert': 'bert-base-uncased',
               'gpt2': 'gpt2'}
+
     for train_on in train_ons:
         for seed in seeds:
-            print_str(f'STARTED RUN ON SEED {seed} TRAINED ON {train_on}')
-            # train model
-            model_name = 'bert'
-            model_params = {
-                'model': model_name,
-                'model_dir': models[model_name],
-                'train_on_dataset': train_on,
-                'seed': seed,
-            }
+            for epoch in EPOCHS:
+                for lr in LR_S:
+                    for bs in BATCH_SIZES:
+                        print_str(f'STARTED RUN ON SEED {seed} TRAINED ON {train_on}')
+                        # train model
+                        model_name = 'bert'
+                        model_params = {
+                            'model': model_name,
+                            'model_dir': models[model_name],
+                            'train_on_dataset': train_on,
+                            'seed': seed,
+                            'epoch': epoch,
+                            'learning_rate': lr,
+                            'batch_size': bs
+                        }
 
-            time = datetime.now()
-            run_name = '{0}_on_{4}_seed={5}_{1}_{2}:{3}'.format(model_params['model'],
-                                                                time.date(), time.hour, time.minute,
-                                                                model_params['train_on_dataset'], model_params['seed'])
+                        time = datetime.now()
+                        run_name = '{0}_on_{4}_seed={5}_{1}_{2}:{3}'.format(model_params['model'],
+                                                                            time.date(), time.hour, time.minute,
+                                                                            model_params['train_on_dataset'], model_params['seed'])
 
-            output_path = 'Model/SavedModels/{0}'.format(run_name)
-            model_path = output_path + '/model'
-            predictions_path = output_path + '/predictions'
+                        output_path = 'Model/SavedModels/{0}'.format(run_name)
+                        model_path = output_path + '/model'
+                        predictions_path = output_path + '/predictions'
 
-            # train model
-            wandb.init(project='HumorNLP', name=run_name)
-            h_trainer = HumorTrainer(model_params, my_parse_args(), datasets, run_name)
-            trained_model = h_trainer.train()
-            wandb.finish()
+                        # train model
+                        wandb.init(project='HumorNLP', name=run_name)
+                        h_trainer = HumorTrainer(model_params, my_parse_args(), datasets, run_name)
+                        trained_model = h_trainer.train()
+                        wandb.finish()
 
-            # save model
-            h_trainer.save_model(model_path)
+                        # save model
+                        h_trainer.save_model(model_path)
 
-            # predict labels
-            h_predictor = HumorPredictor(trained_model, h_trainer.get_test_datasets(), h_trainer.get_tokenizer())
-            # predict on all datasets
-            # for name in dataset_names:
-            #     h_predictor.predict(name)
-            #     h_predictor.write_dataset_predictions(predictions_path, name)
+                        # predict labels
+                        h_predictor = HumorPredictor(trained_model, h_trainer.get_test_datasets(), h_trainer.get_tokenizer())
+                        # predict on all datasets
+                        # for name in dataset_names:
+                        #     h_predictor.predict(name)
+                        #     h_predictor.write_dataset_predictions(predictions_path, name)
 
-            # predict only on the dataset that used for train
-            h_predictor.predict(train_on)
-            h_predictor.write_dataset_predictions(predictions_path, train_on)
+                        # predict only on the dataset that used for train
+                        h_predictor.predict(train_on)
+                        h_predictor.write_dataset_predictions(predictions_path, train_on)
 
-            print_str(f'FINISHED RUN ON SEED {seed} TRAINED ON {train_on}')
+                        print_str(f'FINISHED RUN ON SEED {seed} TRAINED ON {train_on}')
 
     print_str('FINISHED RUN')

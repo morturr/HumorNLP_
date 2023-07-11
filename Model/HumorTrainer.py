@@ -3,6 +3,10 @@ import os
 from datetime import datetime
 import wandb
 import torch
+import sys
+
+sys.path.append('../')
+
 from Utils.utils import print_str, print_cur_time
 from transformers import TrainingArguments, \
     AutoModelForSequenceClassification, set_seed, EvalPrediction, Trainer, \
@@ -31,7 +35,10 @@ class HumorTrainer:
 
         self._hf_args = TrainingArguments(output_dir='output',
                                           save_strategy='no', report_to=['wandb'],
-                                          seed=self._model_params['seed'])
+                                          seed=self._model_params['seed'],
+                                          num_train_epochs=model_params['epoch'],
+                                          per_device_train_batch_size=model_params['batch_size'],
+                                          learning_rate=model_params['learning_rate'])
 
         self._split_sizes = {'train': args.n_train_samples,
                              'test': args.n_test_samples}

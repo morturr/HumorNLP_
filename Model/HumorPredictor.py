@@ -1,6 +1,10 @@
 from transformers import TextClassificationPipeline
 import pandas as pd
 import os
+import sys
+
+sys.path.append('../')
+
 from Utils.utils import print_str, print_cur_time
 from os.path import exists
 from sklearn.metrics import precision_score, recall_score
@@ -64,9 +68,9 @@ class HumorPredictor:
 
 if __name__ == '__main__':
     # dataset_names = ['amazon', 'headlines', 'twss', 'igg']
-    dataset_names = ['headlines']
+    dataset_names = ['twss']
     data_path = '../Data/humor_datasets/'
-    model_name = 'bert_on_headlines_seed=0'
+    model_name = 'bert_on_twss_seed=3'
     pred_path = '../Model/SavedModels/' + model_name + '/predictions/'
     accuracies = {}
     recall = {}
