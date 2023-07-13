@@ -10,6 +10,7 @@ def my_parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('n_train_samples', type=int)
     parser.add_argument('n_test_samples', type=int)
+    parser.add_argument('task', type=str)  # 'hyperparams', 'train'
     return parser.parse_args()
 
 
