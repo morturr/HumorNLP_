@@ -121,6 +121,27 @@ class DataPreprocessing:
         train.to_csv('./humor_datasets/igg/train.csv', index=False)
         test.to_csv('./humor_datasets/igg/test.csv', index=False)
 
+    @staticmethod
+    def split_test_to_val(path, dataset):
+        full_path = path + dataset + '/'
+        df = pd.read_csv(full_path + 'test.csv')
+        df.to_csv(full_path + 'all_test.csv')
+        split_at = int(len(df) / 2)
+        test = df.iloc[:split_at]
+        val = df.iloc[split_at:]
+        test.to_csv(full_path + 'test.csv', ignore_index=True)
+        val.to_csv(full_path + 'val.csv', ignore_index=True)
+
+    @staticmethod
+    def convert_data_to_T5(path, dataset):
+        full_path = path + dataset + '/'
+        for split in ['train', 'test', 'val']:
+            df = pd.read_csv(full_path + split + '.csv')
+            df['target'] = df['label']
+            df['target'] = df['target'].apply(lambda x: 'funny' if x == 1 else 'not funny')
+            os.makedirs(full_path + 'T5', exist_ok=True)
+            df.to_csv(full_path + 'T5/' + split + '.csv', ignore_index=True)
+
 
 if __name__ == '__main__':
     pass
@@ -135,5 +156,7 @@ if __name__ == '__main__':
     ## balance train
     data_path = './humor_datasets/'
     # datasets_names = ['amazon', 'headlines', 'igg', 'twss']
-    datasets_names = ['twss']
-    DataPreprocessing.balance_train(data_path, datasets_names)
+    # datasets_names = ['twss']
+    # DataPreprocessing.balance_train(data_path, datasets_names)
+    # DataPreprocessing.split_test_to_val(data_path, 'amazon')
+    DataPreprocessing.convert_data_to_T5(data_path, 'amazon')
