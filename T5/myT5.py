@@ -125,7 +125,6 @@ def main():
                 path_to_predict = '../Data/humor_datasets/{dataset}/no_val/test.csv'
             for dataset in data_args.datasets_to_predict:
                 curr_path = path_to_predict.format(dataset=dataset)
-                print(f'dataset={dataset}, curr_path={curr_path}')
                 data_files[dataset] = curr_path
         raw_datasets = load_dataset(
             extension,

@@ -63,6 +63,7 @@ class ModelArguments:
 @dataclass
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(default=None)
+    trained_on: str = field(default='igg')
     text_column: Optional[str] = field(default=None)
     target_column: Optional[str] = field(default=None)
     train_file: Optional[str] = field(default=None)
@@ -130,10 +131,12 @@ class T5_Trainer:
                 data_files["test"] = self.data_args.test_file
                 extension = self.data_args.test_file.split(".")[-1]
             if self.data_args.datasets_to_predict is not None:
-                path_to_predict = '../Data/humor_datasets/{dataset}/T5/test.csv'
+                if self.training_args.do_eval:
+                    path_to_predict = '../Data/humor_datasets/{dataset}/with_val/test.csv'
+                else:
+                    path_to_predict = '../Data/humor_datasets/{dataset}/no_val/test.csv'
                 for dataset in self.data_args.datasets_to_predict:
                     curr_path = path_to_predict.format(dataset=dataset)
-                    print(f'dataset={dataset}, curr_path={curr_path}')
                     data_files[dataset] = curr_path
             self.raw_datasets = load_dataset(
                 extension,
@@ -339,7 +342,7 @@ class T5_Trainer:
                                       '_lr={lr}_{date}_{hour}_{minute}'.format(
             model_name=self.model_args.model_name_or_path,
             date=time.date(), hour=time.hour, minute=time.minute,
-            trained_on='amazon', seed=self.training_args.seed,
+            trained_on=self.data_args.trained_on, seed=self.training_args.seed,
             ep=self.training_args.num_train_epochs,
             bs=self.training_args.per_device_train_batch_size,
             lr=self.training_args.learning_rate)
