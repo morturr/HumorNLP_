@@ -28,6 +28,10 @@ class DataPreprocessing:
         return self.datasets
 
     @staticmethod
+    def convert_label_to_target(label):
+        return 'funny' if label == 1 else 'not funny'
+
+    @staticmethod
     def balance_train(path, datasets):
         for dataset in datasets:
             curr_path = path + dataset + '/'
@@ -42,84 +46,139 @@ class DataPreprocessing:
 
             if labels_diff > 0:
                 os.makedirs(curr_path + 'before_balance/', exist_ok=True)
-                test.to_csv(curr_path + 'before_balance/' + 'test.csv')
-                train.to_csv(curr_path + 'before_balance/' + 'train.csv')
+                test.to_csv(curr_path + 'before_balance/' + 'test.csv', index=False)
+                train.to_csv(curr_path + 'before_balance/' + 'train.csv', index=False)
                 test = test.append(larger_df.iloc[:labels_diff], ignore_index=True)
                 larger_df = larger_df.iloc[labels_diff:]
                 test = test.sample(frac=1, random_state=0, ignore_index=True)
                 train = larger_df.append(shorter_df)
                 train = train.sample(frac=1, random_state=0, ignore_index=True)
-                test.to_csv(curr_path + 'test.csv')
-                train.to_csv(curr_path + 'train.csv')
+                test.to_csv(curr_path + 'test.csv', index=False)
+                train.to_csv(curr_path + 'train.csv', index=False)
 
     @staticmethod
-    def load_amazon():
-        path = './original_datasets/amazon/all_data.csv'
-        df = pd.read_csv(path)
-        df_new = pd.DataFrame()
-        df_new['sentence'] = df['question'] + ' [SEP] ' + df['product_description']
-        df_new['label'] = df['label']
-        df_new = df_new[df_new['sentence'].notna()]
+    def balance_train(train_df, test_df):
+        train_label_1 = train_df[train_df['label'] == 1]
+        train_label_0 = train_df[train_df['label'] == 0]
+        larger_df = train_label_1 if len(train_label_1) > len(train_label_0) else train_label_0
+        shorter_df = train_label_0 if len(train_label_1) > len(train_label_0) else train_label_1
+        labels_diff = abs(len(train_label_1) - len(train_label_0))
+
+        if labels_diff > 0:
+            test_df = test_df.append(larger_df.iloc[:labels_diff], ignore_index=True)
+            larger_df = larger_df.iloc[labels_diff:]
+            train_df = larger_df.append(shorter_df)
+            train_df = train_df.sample(frac=1, random_state=0, ignore_index=True)
+            test_df = test_df.sample(frac=1, random_state=0, ignore_index=True)
+
+        return train_df, test_df
+
+    @staticmethod
+    def split_train_test(df, path):
+        os.makedirs(path, exist_ok=True)
+        train, test = train_test_split(df, test_size=0.2, shuffle=True, random_state=0)
+        train, test = DataPreprocessing.balance_train(train, test)
+        test.to_csv(f'{path}/test.csv', index=False)
+        train.to_csv(f'{path}/train.csv', index=False)
+
+    @staticmethod
+    def split_train_test_val(df, path):
+        os.makedirs(path, exist_ok=True)
+        train, test = train_test_split(df, test_size=0.3, shuffle=True, random_state=0)
+        train, test = DataPreprocessing.balance_train(train, test)
+        test, val = train_test_split(test, test_size=0.5, shuffle=True, random_state=0)
+        test.to_csv(f'{path}/test.csv', index=False)
+        train.to_csv(f'{path}/train.csv', index=False)
+        val.to_csv(f'{path}/val.csv', index=False)
+
+    @staticmethod
+    def process_and_save_dataset(df_new, path):
         df_new = df_new.sample(frac=1, random_state=0)
-        df_new['idx'] = range(0, len(df_new))
-        df_new.to_csv('./humor_datasets/amazon/data.csv', index=False)
+        cols = ['id', 'bert_sentence', 't5_sentence', 'target', 'label']
+        df_new = df_new[cols]
 
-        train, test = train_test_split(df_new, test_size=0.2, shuffle=True)
-        train.to_csv('./humor_datasets/amazon/train.csv', index=False)
-        test.to_csv('./humor_datasets/amazon/test.csv', index=False)
+        os.makedirs(path, exist_ok=True)
+        df_new.to_csv(f'{path}/data.csv', index=False)
+
+        DataPreprocessing.split_train_test(df_new, f'{path}/no_val')
+        DataPreprocessing.split_train_test_val(df_new, f'{path}/with_val')
 
     @staticmethod
-    def load_headlines():
+    def preprocess_amazon():
+        input_path = './original_datasets/amazon/all_data.csv'
+        output_path = './humor_datasets/amazon'
+        df = pd.read_csv(input_path)
+        df_new = pd.DataFrame()
+        df_new['bert_sentence'] = df['question'] + ' [SEP] ' + df['product_description']
+        df_new['t5_sentence'] = df['question'] + ' </s> ' + df['product_description']
+        df_new['label'] = df['label']
+        df_new['target'] = df_new['label'].apply(DataPreprocessing.convert_label_to_target)
+        df_new = df_new[df_new['bert_sentence'].notna()]
+        df_new = df_new[df_new['t5_sentence'].notna()]
+        df_new['id'] = range(0, len(df_new))
+
+        DataPreprocessing.process_and_save_dataset(df_new, output_path)
+
+    @staticmethod
+    def preprocess_headlines():
         def edit_headline(row):
             headline = row['original']
             edit_word = row['edit']
             res = headline[:headline.index('<')] + edit_word + headline[headline.index('>') + 1:]
             return res
 
-        splits = ['train', 'dev', 'test', 'train_funlines']
+        input_path = './original_datasets/headlines'
+        output_path = './humor_datasets/headlines'
 
-        for split in splits:
-            path = f'./original_datasets/headlines/{split}.csv'
-            df = pd.read_csv(path)
-            df = df[df['edit'].notna()]
-            df_new = pd.DataFrame()
-            df_new['idx'] = df['id']
-            df_new['meanGrade'] = df['meanGrade']
-            df_new['sentence'] = df.apply(edit_headline, axis=1)
-            df_new['label'] = df.apply(lambda row: 1 if row['meanGrade'] >= 1 else 0, axis=1)
-            df_new.to_csv(f'./humor_datasets/headlines/{split}.csv', index=False)
+        origin_train = pd.read_csv(f'{input_path}/train.csv')
+        origin_test = pd.read_csv(f'{input_path}/test.csv')
+        df = origin_train.append(origin_test, ignore_index=True)
 
-    @staticmethod
-    def load_twss():
-        path = './original_datasets/twss/all_data.csv'
-        df_new = pd.read_csv(path)
-        df_new = df_new[df_new['sentence'].notna()]
-        df_new = df_new.sample(frac=1, random_state=0, ignore_index=True)
-        df_new['idx'] = list(range(len(df_new)))
-
-        df_new.to_csv('./humor_datasets/twss/data.csv', index=False)
-
-        train, test = train_test_split(df_new, test_size=0.2, shuffle=True)
-        train.to_csv('./humor_datasets/twss/train.csv', index=False)
-        test.to_csv('./humor_datasets/twss/test.csv', index=False)
+        df = df[df['edit'].notna()]
+        df_new = pd.DataFrame()
+        df_new['bert_sentence'] = df.apply(edit_headline, axis=1)
+        df_new['t5_sentence'] = df_new['bert_sentence']
+        df_new['label'] = df.apply(lambda row: 1 if row['meanGrade'] >= 1 else 0, axis=1)
+        df_new['target'] = df_new['label'].apply(DataPreprocessing.convert_label_to_target)
+        df_new['id'] = df['id']
+        DataPreprocessing.process_and_save_dataset(df_new, output_path)
 
     @staticmethod
-    def load_igg():
-        path = './original_datasets/igg/all_data.csv'
-        df = pd.read_csv(path)
+    def preprocess_twss():
+        input_path = './original_datasets/twss/all_data.csv'
+        output_path = './humor_datasets/twss'
+        df = pd.read_csv(input_path)
+        df = df[df['sentence'].notna()]
+        df_new = pd.DataFrame()
+        df_new['bert_sentence'] = df['sentence']
+        df_new['t5_sentence'] = df_new['bert_sentence']
+        df_new['label'] = df['label']
+        df_new['id'] = df['idx']
+        df_new['target'] = df_new['label'].apply(DataPreprocessing.convert_label_to_target)
+        DataPreprocessing.process_and_save_dataset(df_new, output_path)
+
+    @staticmethod
+    def preprocess_igg():
+        input_path = './original_datasets/igg/all_data.csv'
+        output_path = './humor_datasets/igg'
+        df = pd.read_csv(input_path)
 
         df_new = pd.DataFrame()
-        df_new['sentence'] = df['title']
+        df_new['bert_sentence'] = df['title']
+        df_new['t5_sentence'] = df_new['bert_sentence']
         df_new['label'] = df['label']
-        df_new['idx'] = df['id']
-        df_new = df_new[df_new['sentence'].notna()]
-        df_new = df_new.sample(frac=1, random_state=0)
+        df_new['target'] = df_new['label'].apply(DataPreprocessing.convert_label_to_target)
+        df_new['id'] = df['id']
+        df_new = df_new[df_new['bert_sentence'].notna()]
 
-        df_new.to_csv('./humor_datasets/igg/data.csv', index=False)
+        DataPreprocessing.process_and_save_dataset(df_new, output_path)
 
-        train, test = train_test_split(df_new, test_size=0.2, shuffle=True)
-        train.to_csv('./humor_datasets/igg/train.csv', index=False)
-        test.to_csv('./humor_datasets/igg/test.csv', index=False)
+    @staticmethod
+    def preprocess_datasets():
+        DataPreprocessing.preprocess_amazon()
+        DataPreprocessing.preprocess_headlines()
+        DataPreprocessing.preprocess_igg()
+        DataPreprocessing.preprocess_twss()
 
     @staticmethod
     def split_test_to_val(path, dataset):
@@ -129,34 +188,89 @@ class DataPreprocessing:
         split_at = int(len(df) / 2)
         test = df.iloc[:split_at]
         val = df.iloc[split_at:]
-        test.to_csv(full_path + 'test.csv', ignore_index=True)
-        val.to_csv(full_path + 'val.csv', ignore_index=True)
+        test.to_csv(full_path + 'test.csv', index=False)
+        val.to_csv(full_path + 'val.csv', index=False)
 
     @staticmethod
-    def convert_data_to_T5(path, dataset):
-        full_path = path + dataset + '/'
-        for split in ['train', 'test', 'val']:
+    def convert_data_to_T5(path, datasets):
+        for dataset in datasets:
+            full_path = path + dataset + '/'
+            for split in ['train', 'test']:#, 'val']:
+                df = pd.read_csv(full_path + split + '.csv')
+                df['target'] = df['label']
+                df['target'] = df['target'].apply(lambda x: 'funny' if x == 1 else 'not funny')
+                if 'Unnamed: 0' in df.columns:
+                    df = df.drop(columns='Unnamed: 0')
+                cols = ['sentence', 'label', 'idx', 'target']
+                df = df[cols]
+                os.makedirs(full_path + 'T5', exist_ok=True)
+                df.to_csv(full_path + 'T5/' + split + '.csv', index=False)
+
+    @staticmethod
+    def convert_amazon_data_to_T5(path):
+        full_path = path + 'amazon/T5' + '/'
+        for split in ['train', 'test']:
             df = pd.read_csv(full_path + split + '.csv')
-            df['target'] = df['label']
-            df['target'] = df['target'].apply(lambda x: 'funny' if x == 1 else 'not funny')
-            os.makedirs(full_path + 'T5', exist_ok=True)
-            df.to_csv(full_path + 'T5/' + split + '.csv', ignore_index=True)
+            df['sentence'] = df['sentence'].apply(lambda row: row.replace('[SEP]', '</s>'))
+            if 'Unnamed: 0' in df.columns:
+                df = df.drop(columns='Unnamed: 0')
+            df.to_csv(full_path + split + '.csv', index=False)
+
+    @staticmethod
+    def create_fixed_size_train():
+        datasets = ['amazon', 'headlines', 'igg', 'twss']
+        data_path = './humor_datasets'
+
+        # find the smallest train size
+        train_size_no_val = DataPreprocessing.get_smallest_train_size(datasets, data_path, 'no_val')
+        train_size_with_val = DataPreprocessing.get_smallest_train_size(datasets, data_path, 'with_val')
+
+        DataPreprocessing.fix_train_size(data_path, datasets, 'no_val', train_size_no_val)
+        DataPreprocessing.fix_train_size(data_path, datasets, 'with_val', train_size_with_val)
+
+    @staticmethod
+    def fix_train_size(data_path, datasets, split_type, train_size):
+        for dataset in datasets:
+            df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/train.csv')
+            df_label_1_train = df[df.label == 1].iloc[:int(train_size / 2)]
+            df_label_0_train = df[df.label == 0].iloc[:int(train_size / 2)]
+            df_label_1_rest = df[df.label == 1].iloc[int(train_size / 2):]
+            df_label_0_rest = df[df.label == 0].iloc[int(train_size / 2):]
+            df_train = df_label_0_train.append(df_label_1_train)
+            df_train = df_train.sample(frac=1, random_state=0, ignore_index=True)
+            df_rest = df_label_0_rest.append(df_label_1_rest)
+            df_rest = df_rest.sample(frac=1, random_state=0, ignore_index=True)
+
+            df_test = pd.read_csv(f'{data_path}/{dataset}/{split_type}/test.csv')
+            df_val = None
+
+            if split_type == 'no_val':
+                df_test = df_test.append(df_rest)
+            else:
+                df_val = pd.read_csv(f'{data_path}/{dataset}/{split_type}/val.csv')
+                df_test = df_test.append(df_rest.iloc[:int(len(df_rest) / 2)])
+                df_val = df_val.append(df_rest.iloc[int(len(df_rest) / 2):])
+
+            output_path = f'{data_path}/{dataset}/{split_type}_fixed_train'
+            os.makedirs(output_path, exist_ok=True)
+            df_train.to_csv(f'{output_path}/train.csv', index=False)
+            df_test.to_csv(f'{output_path}/test.csv', index=False)
+            if df_val is not None:
+                df_val.to_csv(f'{output_path}/val.csv', index=False)
+
+    @staticmethod
+    def get_smallest_train_size(datasets, data_path, split_type):
+        train_size = None
+        for dataset in datasets:
+            df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/train.csv')
+            if not train_size or train_size > len(df):
+                train_size = len(df)
+        return train_size
+
+
 
 
 if __name__ == '__main__':
-    pass
-
-
     ## constructing datasets
-    # DataPreprocessing.load_headlines()
-    # DataPreprocessing.load_amazon()
-    DataPreprocessing.load_twss()
-    # DataPreprocessing.load_igg()
-
-    ## balance train
-    data_path = './humor_datasets/'
-    # datasets_names = ['amazon', 'headlines', 'igg', 'twss']
-    # datasets_names = ['twss']
-    # DataPreprocessing.balance_train(data_path, datasets_names)
-    # DataPreprocessing.split_test_to_val(data_path, 'amazon')
-    DataPreprocessing.convert_data_to_T5(data_path, 'amazon')
+    # DataPreprocessing.preprocess_datasets()
+    DataPreprocessing.create_fixed_size_train()
