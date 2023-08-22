@@ -12,7 +12,7 @@ python3 myT5.py \
 --model_name_or_path \
 t5-base \
 --text_column \
-sentence \
+t5_sentence \
 --target_column \
 target \
 --trained_on \

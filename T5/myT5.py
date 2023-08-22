@@ -165,7 +165,7 @@ def main():
     prefix = data_args.source_prefix if data_args.source_prefix is not None else ""
 
     # column names for input/target
-    dataset_columns = ('sentence', 'target')
+    dataset_columns = ('t5_sentence', 'target')
     if data_args.text_column is None:
         text_column = dataset_columns[0] if dataset_columns is not None else ''
     else:
