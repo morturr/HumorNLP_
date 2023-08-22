@@ -15,10 +15,12 @@ t5-base \
 sentence \
 --target_column \
 target \
+--trained_on \
+igg \
 --train_file \
-../Data/humor_datasets/amazon/T5/train.csv \
+../Data/humor_datasets/igg/no_val/train.csv \
 --test_file \
-../Data/humor_datasets/amazon/T5/test.csv \
+../Data/humor_datasets/igg/no_val/test.csv \
 --datasets_to_predict \
 "amazon" "headlines" "igg" "twss" \
 --output_dir \
@@ -37,12 +39,12 @@ False \
 "wandb" \
 --save_total_limit \
 2 \
-#--max_train_samples \
-#10 \
-#--max_eval_samples \
-#10 \
-#--max_predict_samples \
-#10 \
+--max_train_samples \
+10 \
+--max_eval_samples \
+10 \
+--max_predict_samples \
+10 \
 #--validation_file \
-#../Data/humor_datasets/amazon/T5/val.csv \
+#../Data/humor_datasets/igg/no_val/val.csv \
 

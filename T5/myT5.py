@@ -66,6 +66,7 @@ class ModelArguments:
 @dataclass
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(default=None)
+    trained_on: str = field(default='igg')
     text_column: Optional[str] = field(default=None)
     target_column: Optional[str] = field(default=None)
     train_file: Optional[str] = field(default=None)
@@ -118,7 +119,10 @@ def main():
             data_files["test"] = data_args.test_file
             extension = data_args.test_file.split(".")[-1]
         if data_args.datasets_to_predict is not None:
-            path_to_predict = '../Data/humor_datasets/{dataset}/T5/test.csv'
+            if training_args.do_eval:
+                path_to_predict = '../Data/humor_datasets/{dataset}/with_val/test.csv'
+            else:
+                path_to_predict = '../Data/humor_datasets/{dataset}/no_val/test.csv'
             for dataset in data_args.datasets_to_predict:
                 curr_path = path_to_predict.format(dataset=dataset)
                 print(f'dataset={dataset}, curr_path={curr_path}')
@@ -309,7 +313,7 @@ def main():
     BATCH_SIZES = [8] # add 8 later again
     LRS = [5e-5]
     # LRS = [5e-5, 1e-6]
-    SEEDS = [0, 28, 42]
+    SEEDS = [42]
     general_output_dir = training_args.output_dir
 
     for ep in EPOCHS:
@@ -325,7 +329,7 @@ def main():
                     training_args.run_name = '{model_name}_on_{trained_on}_seed={seed}_ep={ep}_bs={bs}' \
                                              '_lr={lr}_{date}_{hour}_{minute}'.format(model_name=model_args.model_name_or_path,
                                                                         date=time.date(), hour=time.hour, minute=time.minute,
-                                                                        trained_on='amazon', seed=training_args.seed,
+                                                                        trained_on=data_args.trained_on, seed=training_args.seed,
                                                                         ep=training_args.num_train_epochs,
                                                                         bs=training_args.per_device_train_batch_size,
                                                                         lr=training_args.learning_rate)
