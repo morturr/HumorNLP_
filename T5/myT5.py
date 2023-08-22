@@ -2,7 +2,8 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
+import wandb
 
 import datasets
 import evaluate
@@ -10,6 +11,7 @@ import nltk  # Here to have a nice missing dependency error message early on
 import numpy as np
 from datasets import load_dataset
 from filelock import FileLock
+from datetime import datetime
 
 import transformers
 from transformers import (
@@ -27,6 +29,7 @@ from transformers.utils import check_min_version, is_offline_mode, send_example_
 from transformers.utils.versions import require_version
 
 logger = logging.getLogger(__name__)
+wandb.init(project='HumorNLP')
 
 try:
     nltk.data.find("tokenizers/punkt")
@@ -37,6 +40,7 @@ except (LookupError, OSError):
         )
     with FileLock(".lock") as lock:
         nltk.download("punkt", quiet=True)
+
 
 @dataclass
 class ModelArguments:
@@ -58,6 +62,7 @@ class ModelArguments:
     config_name: Optional[str] = field(default=None)
     tokenizer_name: Optional[str] = field(default=None)
 
+
 @dataclass
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(default=None)
@@ -66,6 +71,7 @@ class DataTrainingArguments:
     train_file: Optional[str] = field(default=None)
     validation_file: Optional[str] = field(default=None)
     test_file: Optional[str] = field(default=None)
+    datasets_to_predict: Optional[List[str]] = field(default=None)
     max_source_length: Optional[int] = field(default=512)
     max_target_length: Optional[int] = field(default=10)
     val_max_target_length: Optional[int] = field(default=10)
@@ -111,6 +117,12 @@ def main():
         if data_args.test_file is not None:
             data_files["test"] = data_args.test_file
             extension = data_args.test_file.split(".")[-1]
+        if data_args.datasets_to_predict is not None:
+            path_to_predict = '../Data/humor_datasets/{dataset}/T5/test.csv'
+            for dataset in data_args.datasets_to_predict:
+                curr_path = path_to_predict.format(dataset=dataset)
+                print(f'dataset={dataset}, curr_path={curr_path}')
+                data_files[dataset] = curr_path
         raw_datasets = load_dataset(
             extension,
             data_files=data_files,
@@ -199,7 +211,7 @@ def main():
                 preprocess_function,
                 batched=True,
                 # num_proc=data_args.preprocessing_num_workers,
-                remove_columns=train_dataset.column_names, ## all columns??
+                remove_columns=train_dataset.column_names,  ## all columns??
                 # load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on train dataset",
             )
@@ -223,18 +235,26 @@ def main():
     if training_args.do_predict:
         max_target_length = data_args.val_max_target_length
         predict_dataset = raw_datasets["test"]
-        if data_args.max_predict_samples is not None:
-            max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
-            predict_dataset = predict_dataset.select(range(max_predict_samples))
-        with training_args.main_process_first(desc="prediction dataset map pre-processing"):
-            predict_dataset = predict_dataset.map(
-                preprocess_function,
-                batched=True,
-                # num_proc=data_args.preprocessing_num_workers,
-                remove_columns=predict_dataset.column_names,
-                # load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on prediction dataset",
-            )
+        if data_args.datasets_to_predict:
+            predict_datasets = []
+            for dataset in data_args.datasets_to_predict:
+                predict_datasets.append(raw_datasets[dataset])
+        else:
+            predict_datasets = [predict_dataset]
+
+        for i in range(len(predict_datasets)):
+            if data_args.max_predict_samples is not None:
+                max_predict_samples = min(len(predict_datasets[i]), data_args.max_predict_samples)
+                predict_datasets[i] = predict_datasets[i].select(range(max_predict_samples))
+            with training_args.main_process_first(desc="prediction dataset map pre-processing"):
+                predict_datasets[i] = predict_datasets[i].map(
+                    preprocess_function,
+                    batched=True,
+                    # num_proc=data_args.preprocessing_num_workers,
+                    remove_columns=predict_datasets[i].column_names,
+                    # load_from_cache_file=not data_args.overwrite_cache,
+                    desc="Running tokenizer on prediction dataset",
+                )
 
     # Data collator
     label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
@@ -284,80 +304,125 @@ def main():
         else data_args.val_max_target_length
     )
 
-    # Initialize our Trainer
-    trainer = Seq2SeqTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_eval else None,
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics if training_args.predict_with_generate else None,
-    )
+    # Initialize run name for wandb
+    EPOCHS = [3]
+    BATCH_SIZES = [8] # add 8 later again
+    LRS = [5e-5]
+    # LRS = [5e-5, 1e-6]
+    SEEDS = [0, 28, 42]
+    general_output_dir = training_args.output_dir
 
-    # Training
-    if training_args.do_train:
-        checkpoint = None
-        if training_args.resume_from_checkpoint is not None:
-            checkpoint = training_args.resume_from_checkpoint
-        # elif last_checkpoint is not None:
-        #     checkpoint = last_checkpoint
-        train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        trainer.save_model()  # Saves the tokenizer too for easy upload
+    for ep in EPOCHS:
+        for bs in BATCH_SIZES:
+            for lr in LRS:
+                for seed in SEEDS:
+                    training_args.num_train_epochs = ep
+                    training_args.per_device_train_batch_size = bs
+                    # training_args.per_device_eval_batch_size = bs
+                    training_args.learning_rate = lr
+                    training_args.seed = seed
+                    time = datetime.now()
+                    training_args.run_name = '{model_name}_on_{trained_on}_seed={seed}_ep={ep}_bs={bs}' \
+                                             '_lr={lr}_{date}_{hour}_{minute}'.format(model_name=model_args.model_name_or_path,
+                                                                        date=time.date(), hour=time.hour, minute=time.minute,
+                                                                        trained_on='amazon', seed=training_args.seed,
+                                                                        ep=training_args.num_train_epochs,
+                                                                        bs=training_args.per_device_train_batch_size,
+                                                                        lr=training_args.learning_rate)
 
-        metrics = train_result.metrics
-        max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
-        )
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+                    wandb.init(project='HumorNLP', name=training_args.run_name)
+                    wandb.run.name = training_args.run_name
+                    training_args.output_dir = '{0}/{1}'.format(general_output_dir, training_args.run_name)
 
-        trainer.log_metrics("train", metrics)
-        trainer.save_metrics("train", metrics)
-        trainer.save_state()
+                    # Initialize our Trainer
+                    trainer = Seq2SeqTrainer(
+                        model=model,
+                        args=training_args,
+                        train_dataset=train_dataset if training_args.do_train else None,
+                        eval_dataset=eval_dataset if training_args.do_eval else None,
+                        tokenizer=tokenizer,
+                        data_collator=data_collator,
+                        compute_metrics=compute_metrics if training_args.predict_with_generate else None,
+                    )
 
-    # Evaluation
-    results = {}
-    if training_args.do_eval:
-        logger.info("*** Evaluate ***")
-        if isinstance(eval_dataset, dict):
-            metrics = {}
-            for eval_ds_name, eval_ds in eval_dataset.items():
-                dataset_metrics = trainer.evaluate(eval_dataset=eval_ds, metric_key_prefix=f"eval_{eval_ds_name}")
-                metrics.update(dataset_metrics)
-        else:
-            metrics = trainer.evaluate(metric_key_prefix="eval")
-        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(
-            eval_dataset)
-        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+                    # Training 
+                    if training_args.do_train:
+                        checkpoint = None
+                        if training_args.resume_from_checkpoint is not None:
+                            checkpoint = training_args.resume_from_checkpoint
+                        # elif last_checkpoint is not None:
+                        #     checkpoint = last_checkpoint
+                        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+                        trainer.save_model()  # Saves the tokenizer too for easy upload
 
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+                        metrics = train_result.metrics
+                        max_train_samples = (
+                            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+                        )
+                        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
-    # Predict
-    if training_args.do_predict:
-        logger.info("*** Predict ***")
+                        trainer.log_metrics("train", metrics)
+                        trainer.save_metrics("train", metrics)
+                        trainer.save_state()
 
-        predict_results = trainer.predict(predict_dataset, metric_key_prefix="predict")
-        metrics = predict_results.metrics
-        max_predict_samples = (
-            data_args.max_predict_samples if data_args.max_predict_samples is not None else len(predict_dataset)
-        )
-        metrics["predict_samples"] = min(max_predict_samples, len(predict_dataset))
+                    # Evaluation
+                    results = {}
+                    if training_args.do_eval:
+                        logger.info("*** Evaluate ***")
+                        if isinstance(eval_dataset, dict):
+                            metrics = {}
+                            for eval_ds_name, eval_ds in eval_dataset.items():
+                                dataset_metrics = trainer.evaluate(eval_dataset=eval_ds, metric_key_prefix=f"eval_{eval_ds_name}")
+                                metrics.update(dataset_metrics)
+                        else:
+                            metrics = trainer.evaluate(metric_key_prefix="eval")
+                        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(
+                            eval_dataset)
+                        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
-        trainer.log_metrics("predict", metrics)
-        trainer.save_metrics("predict", metrics)
+                        trainer.log_metrics("eval", metrics)
+                        trainer.save_metrics("eval", metrics)
 
-        if trainer.is_world_process_zero():
-            if training_args.predict_with_generate:
-                predictions = predict_results.predictions
-                predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
-                predictions = tokenizer.batch_decode(
-                    predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
-                )
-                predictions = [pred.strip() for pred in predictions]
-                output_prediction_file = os.path.join(training_args.output_dir, "generated_predictions.txt")
-                with open(output_prediction_file, "w") as writer:
-                    writer.write("\n".join(predictions))
+                    # Predict
+                    if training_args.do_predict:
+                        logger.info("*** Predict ***")
+                        for i in range(len(predict_datasets)):
+                            predict_results = trainer.predict(predict_datasets[i], metric_key_prefix="predict")
+                            metrics = predict_results.metrics
+                            max_predict_samples = (
+                                data_args.max_predict_samples if data_args.max_predict_samples is not None else len(predict_dataset)
+                            )
+                            metrics["predict_samples"] = min(max_predict_samples, len(predict_datasets[i]))
+
+                            trainer.log_metrics("predict", metrics)
+                            trainer.save_metrics("predict", metrics)
+
+                            if trainer.is_world_process_zero():
+                                if training_args.predict_with_generate:
+                                    predictions = predict_results.predictions
+                                    predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
+                                    predictions = tokenizer.batch_decode(
+                                        predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
+                                    )
+                                    predictions = [pred.strip() for pred in predictions]
+                                    output_prediction_file = os.path.join(training_args.output_dir, "generated_predictions.txt")
+                                    with open(output_prediction_file, "w") as writer:
+                                        writer.write("\n".join(predictions))
+
+                                else:
+                                    all_tokens = predict_results.predictions[0]
+                                    predicted_tokens = [[np.argmax(x) for x in tokens] for tokens in all_tokens]
+                                    predicted_tokens = [[token for token in tokens if token not in tokenizer.all_special_ids]
+                                                        for tokens in predicted_tokens]
+                                    predictions = [tokenizer.decode(tokens) for tokens in predicted_tokens]
+                                    os.makedirs(f'{training_args.output_dir}/predictions', exist_ok=True)
+                                    output_prediction_file = os.path.join(
+                                        training_args.output_dir, 'predictions',
+                                        "{dataset}_generated_predictions.txt".format(dataset=data_args.datasets_to_predict[i]))
+                                    with open(output_prediction_file, "w") as writer:
+                                        writer.write("\n".join(predictions))
+
+                    wandb.finish()
 
     return results
 

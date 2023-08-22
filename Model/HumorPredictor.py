@@ -1,5 +1,6 @@
 from transformers import TextClassificationPipeline
 import pandas as pd
+import numpy as np
 import os
 import sys
 
@@ -59,19 +60,20 @@ class HumorPredictor:
         return equals / len(pred_y)
 
     @staticmethod
-    def compute_recall(pred_y, true_y):
-        return recall_score(true_y['label'], pred_y['label'], average='binary')
+    def compute_recall(df_pred, df_real):
+        return recall_score(df_real['label'], df_pred['label'])
 
     @staticmethod
-    def compute_precision(pred_y, true_y):
-        return precision_score(true_y['label'], pred_y['label'], average='binary')
+    def compute_precision(df_pred, df_real):
+        return precision_score(df_real['label'], df_pred['label'])
 
     @staticmethod
     def save_performance():
         def get_run_details(run_name):
-            model, run_name = run_name[:run_name.index('_')], run_name[run_name.index('_') + 1:]
-            run_name = run_name[run_name.index('_') + 1:]
-            dataset_name, seed = run_name[:run_name.index('_')], run_name[run_name.index('=') + 1:]
+            run_data = run_name.split('_')
+            model = run_data[0]
+            dataset_name = run_data[2]
+            seed = run_data[3][run_data[3].index('=') + 1:]
 
             return model, dataset_name, float(seed)
 
@@ -79,10 +81,21 @@ class HumorPredictor:
         # dataset_names = ['amazon', 'headlines', 'twss', 'igg']
         dataset_names = ['amazon', 'headlines', 'igg', 'twss']
         data_path = '../Data/humor_datasets/'
-        models_name = ['bert_on_amazon_seed=0',
-                       'bert_on_headlines_seed=3',
-                       'bert_on_igg_seed=28',
-                       'bert_on_twss_seed=42']
+        models_name = [
+                        # 'bert_on_amazon_seed=0',
+                        # 'bert_on_headlines_seed=3',
+                        # 'bert_on_igg_seed=28',
+                        # 'bert_on_twss_seed=42',
+                       # 'T5-with-val_on_amazon_seed=0',
+                       # 'T5-with-val_on_headlines_seed=0',
+                       # 'T5-with-val_on_igg_seed=42',
+                       # 'T5-with-val_on_twss_seed=42',
+                       #  'T5-no-val_on_amazon_seed=42',
+                       #  'T5-no-val_on_headlines_seed=0',
+                       #  'T5-no-val_on_igg_seed=42',
+                       #  'T5-no-val_on_twss_seed=42',
+                        'T5-no-val_on_amazon_seed=42_lr=5e-5'
+                       ]
 
         df = pd.read_excel(output_path + 'humor_results_template.xlsx')
         df.fillna(method='ffill', axis=0, inplace=True)
@@ -96,13 +109,19 @@ class HumorPredictor:
             precision = {}
             for dataset in dataset_names:
                 pred_labels_path = pred_path + f'{dataset}_preds.csv'
-                test_labels_path = data_path + f'{dataset}/test.csv'
+                test_labels_path = data_path + f'{dataset}/T5/test.csv'
+                # test_labels_path = data_path + f'{dataset}/partial_test.csv'
                 if not (exists(pred_labels_path) and exists(test_labels_path)):
                     print('didnt find preds/test path')
                     continue
 
                 _preds = pd.read_csv(pred_labels_path)
                 _test = pd.read_csv(test_labels_path)
+                if (len(_preds[_preds.label == -1]) > 0):
+                    illegal_indices = _preds[_preds.label == -1].index
+                    print(f'there are {len(illegal_indices)} illegal indices in {dataset_name} predictions on {dataset}')
+                    _preds = _preds.drop(labels=illegal_indices, axis=0)
+                    _test = _test.drop(labels=illegal_indices, axis=0)
                 accuracies[dataset] = HumorPredictor.compute_accuracy(_preds, _test)
                 recall[dataset] = HumorPredictor.compute_recall(_preds, _test)
                 precision[dataset] = HumorPredictor.compute_precision(_preds, _test)
@@ -123,6 +142,64 @@ class HumorPredictor:
 
         df.to_excel(output_path + f'humor_results_{i}.xlsx')
 
+    @staticmethod
+    def convert_T5_preds():
+        def edit_row(row):
+            if row['original'] not in ['funny', 'not funny']:
+                row['edited'] = True
+                if 'not' in row['original']:
+                    row['target'] = 'not funny'
+                    row['label'] = 0
+                elif 'funny' in row['original']:
+                    row['target'] = 'funny'
+                    row['label'] = 1
+                else:
+                    row['target'] = 'illegal'
+                    row['label'] = -1
+            elif row['original'] == 'funny':
+                row['label'] = 1
+            elif row['original'] == 'not funny':
+                row['label'] = 0
+            return row
+
+        datasets = ['amazon', 'headlines', 'igg', 'twss']
+        model_preds_path = [
+            # 'T5-no-val_on_amazon_seed=42',
+            # 'T5-no-val_on_headlines_seed=0',
+            # 'T5-no-val_on_igg_seed=42',
+            # 'T5-no-val_on_twss_seed=42',
+            'T5-no-val_on_amazon_seed=42_lr=5e-5'
+        ]
+        for model in model_preds_path:
+            for dataset in datasets:
+                f = open(f'SavedModels/{model}/predictions/{dataset}_generated_predictions.txt')
+                data = f.read().split('\n')
+                data = list(map(lambda x: x.strip(), data))
+
+                df = pd.DataFrame()
+                df['original'] = data
+                df['target'] = df['original']
+                df['edited'] = False
+
+                df = df.apply(edit_row, axis=1)
+                df_pred = df
+
+                df_real = pd.read_csv(f'../Data/humor_datasets/{dataset}/T5/test.csv')
+                df_pred['sentence'] = df_real['sentence']
+
+                cols = ['sentence', 'target', 'label', 'original', 'edited']
+                df_pred = df_pred[cols]
+
+                df_pred.to_csv(f'SavedModels/{model}/predictions/{dataset}_preds.csv', index=False)
+
+                all_count, legal_count = len(data), len(df_pred[df_pred['target'] != 'illegal'])
+                # print(f'length of {dataset} is {all_count}')
+                # print(f'length of legals in {dataset} is {legal_count}')
+                # print(f'% legals = {100 * (legal_count / all_count)}')
+
+                # df_real = pd.read_csv(f'../Data/humor_datasets/{dataset}/T5/test.csv')
+                # print(f'accuracy of {dataset} is {compute_accuracy(df_pred, df_real)}')
 
 if __name__ == '__main__':
     HumorPredictor.save_performance()
+    # HumorPredictor.convert_T5_preds()
