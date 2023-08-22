@@ -317,8 +317,8 @@ class T5_Trainer:
     def train_and_predict(self):
         epochs = [3]
         batch_sizes = [8]
-        lrs = [1e-6]  # [5e-5, 1e-6]
-        seeds = [0, 28, 42]
+        lrs = [5e-5]  # [5e-5, 1e-6]
+        seeds = [42]
         general_output_dir = self.training_args.output_dir
 
         for ep in epochs:

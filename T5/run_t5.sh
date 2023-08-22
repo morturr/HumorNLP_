@@ -8,7 +8,7 @@
 #SBATCH --mail-user=mor.turgeman2@mail.huji.ac.il
 #SBATCH --gres=gpu:1,vmem:21g
 
-python3 myT5.py \
+python3 T5_Trainer.py \
 --model_name_or_path \
 t5-base \
 --text_column \
