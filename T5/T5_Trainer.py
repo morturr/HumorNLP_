@@ -278,7 +278,6 @@ class T5_Trainer:
                 )
 
         if self.training_args.do_eval:
-            max_target_length = self.data_args.val_max_target_length
             self.eval_dataset = self.raw_datasets["validation"]
             if self.data_args.max_eval_samples is not None:
                 max_eval_samples = min(len(self.eval_dataset), self.data_args.max_eval_samples)
@@ -294,7 +293,6 @@ class T5_Trainer:
                 )
 
         if self.training_args.do_predict:
-            max_target_length = self.data_args.val_max_target_length
             predict_dataset = self.raw_datasets["test"]
             if self.data_args.datasets_to_predict:
                 self.predict_datasets = []
@@ -435,8 +433,9 @@ class T5_Trainer:
                 predict_results = self.trainer.predict(self.predict_datasets[i], metric_key_prefix="predict")
                 metrics = predict_results.metrics
                 max_predict_samples = (
-                    self.data_args.max_predict_samples if self.data_args.max_predict_samples is not None else len(
-                        self.predict_datasets[i])
+                    min(self.data_args.max_predict_samples, len(self.predict_datasets[i]))
+                    if self.data_args.max_predict_samples is not None else
+                    len(self.predict_datasets[i])
                 )
                 metrics["predict_samples"] = min(max_predict_samples, len(self.predict_datasets[i]))
 
@@ -491,9 +490,11 @@ class T5_Trainer:
 
         df_real = pd.read_csv(f'../Data/humor_datasets/{predict_dataset}/{self.data_args.split_type}/test.csv')
         max_predict_samples = (
-            self.data_args.max_predict_samples if self.data_args.max_predict_samples is not None else len(
-                df_real)
+            min(self.data_args.max_predict_samples, len(df_real))
+            if self.data_args.max_predict_samples is not None else
+            len(df_real)
         )
+
         df_real = df_real.iloc[list(range(max_predict_samples))]
         df_pred['t5_sentence'] = df_real['t5_sentence']
         df_pred['id'] = df_real['id']
@@ -529,7 +530,7 @@ class T5_Trainer:
 
     def save_results(self):
         time = datetime.now()
-        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}_{hour}_{minute}'.format(
+        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}_{hour}_{minute}.txt'.format(
             model_name=self.model_args.model_name_or_path,
             dataset=self.data_args.trained_on,
             date=time.date(),
