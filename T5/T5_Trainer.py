@@ -11,6 +11,8 @@ from datasets import load_dataset
 from filelock import FileLock
 from datetime import datetime
 import pandas as pd
+from sklearn.metrics import precision_score, recall_score, accuracy_score
+
 
 import transformers
 from transformers import (
@@ -96,6 +98,7 @@ class T5_Trainer:
         self.raw_datasets = None
         self.config, self.tokenizer, self.model = None, None, None
         self.train_dataset, self.eval_dataset, self.predict_datasets = None, None, None
+        self.results = {}
 
         # Setup logging
         logging.basicConfig(
@@ -111,6 +114,7 @@ class T5_Trainer:
         self.set_data_attr()
         self.preprocess_datasets()
         self.train_and_predict()
+        self.save_results()
 
     def load_files(self):
         if (self.training_args.do_eval and 'no_val' in self.data_args.split_type) or \
@@ -333,6 +337,7 @@ class T5_Trainer:
                         self.train()
                         self.eval()
                         self.predict()
+                        self.compute_performance(ep, bs, lr, seed)
                         wandb.finish()
 
     def set_run_details(self, ep, bs, lr, seed, general_output_dir):
@@ -498,6 +503,33 @@ class T5_Trainer:
             self.training_args.output_dir, 'predictions',
             "{dataset}_preds.csv".format(dataset=predict_dataset))
         df_pred.to_csv(output_prediction_file, index=False)
+
+#TODO edit this function and do it in a good way! its just cause i dont feel comfortable
+    def compute_performance(self, ep, bs, lr, seed):
+        dataset_name = self.data_args.trained_on
+        df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
+        prediction_file = os.path.join(
+            self.training_args.output_dir, 'predictions',
+            "{dataset}_preds.csv".format(dataset=dataset_name))
+        df_pred = pd.read_csv(prediction_file)
+
+        if (len(df_pred[df_pred.label == -1]) > 0):
+            illegal_indices = df_pred[df_pred.label == -1].index
+            print(f'there are {len(illegal_indices)} illegal indices in {dataset_name} predictions on itself')
+            df_pred = df_pred.drop(labels=illegal_indices, axis=0)
+            df_real = df_pred.drop(labels=illegal_indices, axis=0)
+            self.results[ep, bs, lr, seed] = accuracy_score(df_real, df_pred)
+
+    def save_results(self):
+        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}'.format(
+            model_name=self.model_args.model_name_or_path,
+            dataset=self.data_args.trained_on,
+            date=datetime.now().date()
+        )
+        with open(results_file_path, 'a') as f:
+            for k, v in self.results.items():
+                f.write(f'ep: {k[0]}, bs: {k[1]}, lr: {k[2]}, seed: {k[3]}\n')
+                f.write(f'accuracy = {v}\n')
 
     @staticmethod
     def postprocess_text(preds, labels):
