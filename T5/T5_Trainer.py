@@ -3,6 +3,9 @@ import os
 import sys
 from dataclasses import dataclass, field
 from typing import Optional, List
+
+import torch.cuda
+
 import wandb
 import evaluate
 import nltk  # Here to have a nice missing dependency error message early on
@@ -110,6 +113,13 @@ class T5_Trainer:
             datefmt="%m/%d/%Y %H:%M:%S",
             handlers=[logging.StreamHandler(sys.stdout)],
         )
+
+        # clear gpu memory
+        with open("cuda_info_before.txt", "w") as f:
+            f.write(torch.cuda.memory_summary(device=None, abbreviated=None))
+        torch.cuda.empty_cache()
+        with open("cuda_info_after.txt", "w") as f:
+            f.write(torch.cuda.memory_summary(device=None, abbreviated=None))
 
     def pipeline(self):
         set_seed(self.training_args.seed)
@@ -400,7 +410,6 @@ class T5_Trainer:
 
     def eval(self):
         # Evaluation
-        results = {}
         if self.training_args.do_eval:
             logger.info("*** Evaluate ***")
             if isinstance(self.eval_dataset, dict):
@@ -444,11 +453,6 @@ class T5_Trainer:
                         predictions = [pred.strip() for pred in predictions]
                         self.save_predictions(predictions, self.data_args.datasets_to_predict[i])
 
-                        # output_prediction_file = os.path.join(self.training_args.output_dir,
-                        #                                       "generated_predictions.txt")
-                        # with open(output_prediction_file, "w") as writer:
-                        #     writer.write("\n".join(predictions))
-
                     else:
                         all_tokens = predict_results.predictions[0]
                         predicted_tokens = [[np.argmax(x) for x in tokens] for tokens in all_tokens]
@@ -457,12 +461,6 @@ class T5_Trainer:
                         predictions = [self.tokenizer.decode(tokens) for tokens in predicted_tokens]
 
                         self.save_predictions(predictions, self.data_args.datasets_to_predict[i])
-                        # os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
-                        # output_prediction_file = os.path.join(
-                        #     self.training_args.output_dir, 'predictions',
-                        #     "{dataset}_generated_predictions.txt".format(dataset=self.data_args.datasets_to_predict[i]))
-                        # with open(output_prediction_file, "w") as writer:
-                        #     writer.write("\n".join(predictions))
 
     def save_predictions(self, predictions, predict_dataset):
         def edit_row(row):
@@ -508,7 +506,7 @@ class T5_Trainer:
             "{dataset}_preds.csv".format(dataset=predict_dataset))
         df_pred.to_csv(output_prediction_file, index=False)
 
-#TODO edit this function and do it in a good way! its just cause i dont feel comfortable
+# TODO edit this function and do it in a good way! its just cause i dont feel comfortable
     def compute_performance(self, ep, bs, lr, seed):
         dataset_name = self.data_args.trained_on
         df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
@@ -516,21 +514,22 @@ class T5_Trainer:
             self.training_args.output_dir, 'predictions',
             "{dataset}_preds.csv".format(dataset=dataset_name))
         df_pred = pd.read_csv(prediction_file)
+        total_count, legal_count = len(df_pred)
+        df_real = df_real.iloc[:total_count]
 
-        if (len(df_pred[df_pred.label == -1]) > 0):
+        if len(df_pred[df_pred.label == -1]) > 0:
             illegal_indices = df_pred[df_pred.label == -1].index
             print(f'there are {len(illegal_indices)} illegal indices in {dataset_name} predictions on itself')
-            total_count = len(df_pred)
             df_pred = df_pred.drop(labels=illegal_indices, axis=0)
-            legal_count = len(df_pred)
-            percent_legal = (legal_count / total_count) * 100
-            df_real = df_real.iloc[:total_count]
             df_real = df_real.drop(labels=illegal_indices, axis=0)
-            self.results[ep, bs, lr, seed] = accuracy_score(df_real.label, df_pred.label), percent_legal
+            legal_count = len(df_pred)
+
+        percent_legal = (legal_count / total_count) * 100
+        self.results[ep, bs, lr, seed] = accuracy_score(df_real.label, df_pred.label), percent_legal
 
     def save_results(self):
         time = datetime.now()
-        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}_{hour)_{minute}'.format(
+        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}_{hour}_{minute}'.format(
             model_name=self.model_args.model_name_or_path,
             dataset=self.data_args.trained_on,
             date=time.date(),
