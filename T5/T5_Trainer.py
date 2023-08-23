@@ -514,7 +514,7 @@ class T5_Trainer:
             self.training_args.output_dir, 'predictions',
             "{dataset}_preds.csv".format(dataset=dataset_name))
         df_pred = pd.read_csv(prediction_file)
-        total_count, legal_count = len(df_pred)
+        total_count, legal_count = len(df_pred), len(df_pred)
         df_real = df_real.iloc[:total_count]
 
         if len(df_pred[df_pred.label == -1]) > 0:
