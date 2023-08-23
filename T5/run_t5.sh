@@ -17,6 +17,8 @@ t5_sentence \
 target \
 --trained_on \
 igg \
+--split_type \
+no_val \
 --train_file \
 ../Data/humor_datasets/igg/no_val/train.csv \
 --test_file \

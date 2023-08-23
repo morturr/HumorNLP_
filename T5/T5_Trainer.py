@@ -10,6 +10,7 @@ import numpy as np
 from datasets import load_dataset
 from filelock import FileLock
 from datetime import datetime
+import pandas as pd
 
 import transformers
 from transformers import (
@@ -64,6 +65,7 @@ class ModelArguments:
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(default=None)
     trained_on: str = field(default='igg')
+    split_type: Optional[str] = field(default='no_val')
     text_column: Optional[str] = field(default=None)
     target_column: Optional[str] = field(default=None)
     train_file: Optional[str] = field(default=None)
@@ -111,6 +113,11 @@ class T5_Trainer:
         self.train_and_predict()
 
     def load_files(self):
+        if (self.training_args.do_eval and 'no_val' in self.data_args.split_type) or \
+                (not self.training_args.do_eval and 'with_val' in self.data_args.split_type):
+            logger.warning(
+                "The use of eval set is not compatible"
+            )
         if self.data_args.dataset_name is not None:
             # Downloading and loading a dataset from the hub.
             self.raw_datasets = load_dataset(
@@ -131,12 +138,9 @@ class T5_Trainer:
                 data_files["test"] = self.data_args.test_file
                 extension = self.data_args.test_file.split(".")[-1]
             if self.data_args.datasets_to_predict is not None:
-                if self.training_args.do_eval:
-                    path_to_predict = '../Data/humor_datasets/{dataset}/with_val/test.csv'
-                else:
-                    path_to_predict = '../Data/humor_datasets/{dataset}/no_val/test.csv'
+                path_to_predict = '../Data/humor_datasets/{dataset}/{split_type}/test.csv'
                 for dataset in self.data_args.datasets_to_predict:
-                    curr_path = path_to_predict.format(dataset=dataset)
+                    curr_path = path_to_predict.format(dataset=dataset, split_type=self.data_args.split_type)
                     data_files[dataset] = curr_path
             self.raw_datasets = load_dataset(
                 extension,
@@ -429,10 +433,12 @@ class T5_Trainer:
                             predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
                         )
                         predictions = [pred.strip() for pred in predictions]
-                        output_prediction_file = os.path.join(self.training_args.output_dir,
-                                                              "generated_predictions.txt")
-                        with open(output_prediction_file, "w") as writer:
-                            writer.write("\n".join(predictions))
+                        self.save_predictions(predictions, self.data_args.datasets_to_predict[i])
+
+                        # output_prediction_file = os.path.join(self.training_args.output_dir,
+                        #                                       "generated_predictions.txt")
+                        # with open(output_prediction_file, "w") as writer:
+                        #     writer.write("\n".join(predictions))
 
                     else:
                         all_tokens = predict_results.predictions[0]
@@ -440,12 +446,54 @@ class T5_Trainer:
                         predicted_tokens = [[token for token in tokens if token not in self.tokenizer.all_special_ids]
                                             for tokens in predicted_tokens]
                         predictions = [self.tokenizer.decode(tokens) for tokens in predicted_tokens]
-                        os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
-                        output_prediction_file = os.path.join(
-                            self.training_args.output_dir, 'predictions',
-                            "{dataset}_generated_predictions.txt".format(dataset=self.data_args.datasets_to_predict[i]))
-                        with open(output_prediction_file, "w") as writer:
-                            writer.write("\n".join(predictions))
+
+                        self.save_predictions(predictions, self.data_args.datasets_to_predict[i])
+                        # os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
+                        # output_prediction_file = os.path.join(
+                        #     self.training_args.output_dir, 'predictions',
+                        #     "{dataset}_generated_predictions.txt".format(dataset=self.data_args.datasets_to_predict[i]))
+                        # with open(output_prediction_file, "w") as writer:
+                        #     writer.write("\n".join(predictions))
+
+    def save_predictions(self, predictions, predict_dataset):
+        def edit_row(row):
+            if row['original'] not in ['funny', 'not funny']:
+                row['edited'] = True
+                if 'not' in row['original']:
+                    row['target'] = 'not funny'
+                    row['label'] = 0
+                elif 'funny' in row['original']:
+                    row['target'] = 'funny'
+                    row['label'] = 1
+                else:
+                    row['target'] = 'illegal'
+                    row['label'] = -1
+            elif row['original'] == 'funny':
+                row['label'] = 1
+            elif row['original'] == 'not funny':
+                row['label'] = 0
+            return row
+
+        df = pd.DataFrame()
+        df['original'] = predictions
+        df['target'] = df['original']
+        df['edited'] = False
+
+        df = df.apply(edit_row, axis=1)
+        df_pred = df
+
+        df_real = pd.read_csv(f'../Data/humor_datasets/{predict_dataset}/{self.data_args.split_type}/test.csv')
+        df_real = df_real.iloc[list(range(self.max_predict_samples))]
+        df_pred['t5_sentence'] = df_real['t5_sentence']
+        df_pred['id'] = df_real['id']
+        cols = ['id', 't5_sentence', 'target', 'label', 'original', 'edited']
+        df_pred = df_pred[cols]
+
+        os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
+        output_prediction_file = os.path.join(
+            self.training_args.output_dir, 'predictions',
+            "{dataset}_preds.csv".format(dataset=predict_dataset))
+        df_pred.to_csv(output_prediction_file, index=False)
 
     @staticmethod
     def postprocess_text(preds, labels):
