@@ -418,7 +418,7 @@ class T5_Trainer:
                 metrics = predict_results.metrics
                 max_predict_samples = (
                     self.data_args.max_predict_samples if self.data_args.max_predict_samples is not None else len(
-                        self.predict_dataset)
+                        self.predict_datasets[i])
                 )
                 metrics["predict_samples"] = min(max_predict_samples, len(self.predict_datasets[i]))
 
@@ -483,7 +483,11 @@ class T5_Trainer:
         df_pred = df
 
         df_real = pd.read_csv(f'../Data/humor_datasets/{predict_dataset}/{self.data_args.split_type}/test.csv')
-        df_real = df_real.iloc[list(range(self.max_predict_samples))]
+        max_predict_samples = (
+            self.data_args.max_predict_samples if self.data_args.max_predict_samples is not None else len(
+                df_real)
+        )
+        df_real = df_real.iloc[list(range(max_predict_samples))]
         df_pred['t5_sentence'] = df_real['t5_sentence']
         df_pred['id'] = df_real['id']
         cols = ['id', 't5_sentence', 'target', 'label', 'original', 'edited']
