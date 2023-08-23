@@ -516,9 +516,13 @@ class T5_Trainer:
         if (len(df_pred[df_pred.label == -1]) > 0):
             illegal_indices = df_pred[df_pred.label == -1].index
             print(f'there are {len(illegal_indices)} illegal indices in {dataset_name} predictions on itself')
+            total_count = len(df_pred)
             df_pred = df_pred.drop(labels=illegal_indices, axis=0)
-            df_real = df_pred.drop(labels=illegal_indices, axis=0)
-            self.results[ep, bs, lr, seed] = accuracy_score(df_real, df_pred)
+            legal_count = len(df_pred)
+            percent_legal = (legal_count / total_count) * 100
+            df_real = df_real.iloc[:total_count]
+            df_real = df_real.drop(labels=illegal_indices, axis=0)
+            self.results[ep, bs, lr, seed] = accuracy_score(df_real.label, df_pred.label), percent_legal
 
     def save_results(self):
         results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}'.format(
@@ -529,7 +533,7 @@ class T5_Trainer:
         with open(results_file_path, 'a') as f:
             for k, v in self.results.items():
                 f.write(f'ep: {k[0]}, bs: {k[1]}, lr: {k[2]}, seed: {k[3]}\n')
-                f.write(f'accuracy = {v}\n')
+                f.write(f'accuracy = {v[0]} on {v[1]}% legal \n')
 
     @staticmethod
     def postprocess_text(preds, labels):
