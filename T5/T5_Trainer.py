@@ -529,11 +529,14 @@ class T5_Trainer:
             self.results[ep, bs, lr, seed] = accuracy_score(df_real.label, df_pred.label), percent_legal
 
     def save_results(self):
-        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}'.format(
+        time = datetime.now()
+        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}_{hour)_{minute}'.format(
             model_name=self.model_args.model_name_or_path,
             dataset=self.data_args.trained_on,
-            date=datetime.now().date()
+            date=time.date(),
+            hour=time.hour, minute=time.minute
         )
+
         with open(results_file_path, 'a') as f:
             for k, v in self.results.items():
                 f.write(f'ep: {k[0]}, bs: {k[1]}, lr: {k[2]}, seed: {k[3]}\n')
