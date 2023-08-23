@@ -74,6 +74,10 @@ class DataTrainingArguments:
     validation_file: Optional[str] = field(default=None)
     test_file: Optional[str] = field(default=None)
     datasets_to_predict: Optional[List[str]] = field(default=None)
+    epochs: Optional[List[int]] = field(default_factory=lambda: [3])
+    batch_sizes: Optional[List[int]] = field(default_factory=lambda: [8])
+    learning_rates: Optional[List[float]] = field(default_factory=lambda: [1e-5])
+    seeds: Optional[List[int]] = field(default_factory=lambda: [42])
     max_source_length: Optional[int] = field(default=512)
     max_target_length: Optional[int] = field(default=10)
     val_max_target_length: Optional[int] = field(default=10)
@@ -323,10 +327,10 @@ class T5_Trainer:
         return result
 
     def train_and_predict(self):
-        epochs = [3]
-        batch_sizes = [8]
-        lrs = [5e-5]  # [5e-5, 1e-6]
-        seeds = [42]
+        epochs = self.data_args.epochs
+        batch_sizes = self.data_args.batch_sizes
+        lrs = self.data_args.learning_rates
+        seeds = self.data_args.seeds
         general_output_dir = self.training_args.output_dir
 
         for ep in epochs:

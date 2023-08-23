@@ -25,6 +25,14 @@ no_val \
 ../Data/humor_datasets/igg/no_val/test.csv \
 --datasets_to_predict \
 "amazon" "headlines" "igg" "twss" \
+--epochs \
+3 \
+--batch_sizes \
+8 \
+--learning_rates \
+5e-5 1e-6 \
+--seeds \
+5 18 27 42 \
 --output_dir \
 ../Model/SavedModels/T5 \
 --do_train \
