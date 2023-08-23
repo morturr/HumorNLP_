@@ -16,7 +16,6 @@ from datetime import datetime
 import pandas as pd
 from sklearn.metrics import precision_score, recall_score, accuracy_score
 
-
 import transformers
 from transformers import (
     AutoConfig,
@@ -355,18 +354,19 @@ class T5_Trainer:
     def set_run_details(self, ep, bs, lr, seed, general_output_dir):
         self.training_args.num_train_epochs = ep
         self.training_args.per_device_train_batch_size = bs
-        # self.training_args.per_device_eval_batch_size = bs
+        self.training_args.per_device_eval_batch_size = bs
         self.training_args.learning_rate = lr
         self.training_args.seed = seed
         time = datetime.now()
-        self.training_args.run_name = '{model_name}_on_{trained_on}_seed={seed}_ep={ep}_bs={bs}' \
+        self.training_args.run_name = '{model_name}-{split_type}_on_{trained_on}_seed={seed}_ep={ep}_bs={bs}' \
                                       '_lr={lr}_{date}_{hour}_{minute}'.format(
             model_name=self.model_args.model_name_or_path,
             date=time.date(), hour=time.hour, minute=time.minute,
             trained_on=self.data_args.trained_on, seed=self.training_args.seed,
             ep=self.training_args.num_train_epochs,
             bs=self.training_args.per_device_train_batch_size,
-            lr=self.training_args.learning_rate)
+            lr=self.training_args.learning_rate,
+            split_type=self.data_args.split_type)
 
         wandb.init(project='HumorNLP', name=self.training_args.run_name)
         wandb.run.name = self.training_args.run_name
@@ -507,7 +507,7 @@ class T5_Trainer:
             "{dataset}_preds.csv".format(dataset=predict_dataset))
         df_pred.to_csv(output_prediction_file, index=False)
 
-# TODO edit this function and do it in a good way! its just cause i dont feel comfortable
+    # TODO edit this function and do it in a good way! its just cause i dont feel comfortable
     def compute_performance(self, ep, bs, lr, seed):
         dataset_name = self.data_args.trained_on
         df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
