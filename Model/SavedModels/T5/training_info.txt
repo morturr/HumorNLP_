@@ -1,0 +1,32 @@
+All T5 models were trained with the following hyperparameters:
+epoch = 3
+batch size = 8
+learning rate = 1e-06
+seeds = 5, 18, 27, 42
+the train size for all models is 2376 with balanced labels
+test size is min(original_test_size, 3500), means:
+amazon - 3500
+headlines - 3500
+igg - 519
+twss - 788
+for the eval set, it's the same as test set.
+
+the distribution of the labels in the test set is as follows:
+for amazon:
+%label 1 = 50.77, %label 0 = 49.23
+for headlines:
+%label 1 = 48.86, %label 0 = 51.14
+for igg:
+%label 1 = 52.79, %label 0 = 47.21
+for twss:
+%label 1 = 47.84, %label 0 = 52.16
+
+the distribution of the labels in the eval set is as follows:
+for amazon:
+%label 1 = 49.46, %label 0 = 50.54
+for headlines:
+%label 1 = 47.11, %label 0 = 52.89
+for igg:
+%label 1 = 47.21, %label 0 = 52.79
+for twss:
+%label 1 = 49.11, %label 0 = 50.89
