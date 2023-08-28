@@ -1,6 +1,4 @@
 import evaluate
-
-from Utils.utils import DataTrainingArguments, ModelArguments, DEVICE
 import logging
 import wandb
 from transformers import (
@@ -20,9 +18,10 @@ from datasets import load_dataset
 from datetime import datetime
 import os
 from sklearn.metrics import accuracy_score
-import sys
 
+import sys
 sys.path.append('../')
+from Utils.utils import DataTrainingArguments, ModelArguments, DEVICE
 
 logger = logging.getLogger(__name__)
 wandb.init(project='HumorNLP')
@@ -95,7 +94,7 @@ class BertTrainer:
         self.tokenizer = BertTokenizer.from_pretrained(self.model_args.model_name_or_path)
         self.model = BertForSequenceClassification.from_pretrained(self.model_args.model_name_or_path,
                                                                    config=self.config).to(DEVICE)
-        self.classifier = TextClassificationPipeline(model=self.model.to('cpu'), tokenizer=self.tokenizer)
+        self.classifier = TextClassificationPipeline(model=self.model.to(DEVICE), tokenizer=self.tokenizer)
         self.metric = evaluate.load('accuracy')
 
     def set_data_attr(self):

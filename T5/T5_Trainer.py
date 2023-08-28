@@ -10,7 +10,6 @@ from filelock import FileLock
 from datetime import datetime
 import pandas as pd
 from sklearn.metrics import accuracy_score
-from Utils.utils import DataTrainingArguments, ModelArguments
 
 from transformers import (
     AutoConfig,
@@ -26,8 +25,8 @@ from transformers import (
 from transformers.utils import is_offline_mode
 
 import sys
-
 sys.path.append('../')
+from Utils.utils import DataTrainingArguments, ModelArguments
 
 logger = logging.getLogger(__name__)
 wandb.init(project='HumorNLP')
