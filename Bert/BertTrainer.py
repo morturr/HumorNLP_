@@ -94,7 +94,7 @@ class BertTrainer:
         self.tokenizer = BertTokenizer.from_pretrained(self.model_args.model_name_or_path)
         self.model = BertForSequenceClassification.from_pretrained(self.model_args.model_name_or_path,
                                                                    config=self.config).to(DEVICE)
-        self.classifier = TextClassificationPipeline(model=self.model.to(DEVICE), tokenizer=self.tokenizer)
+        self.classifier = TextClassificationPipeline(model=self.model.to(DEVICE), tokenizer=self.tokenizer).to(DEVICE)
         self.metric = evaluate.load('accuracy')
 
     def set_data_attr(self):
