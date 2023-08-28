@@ -20,6 +20,9 @@ from datasets import load_dataset
 from datetime import datetime
 import os
 from sklearn.metrics import accuracy_score
+import sys
+
+sys.path.append('../')
 
 logger = logging.getLogger(__name__)
 wandb.init(project='HumorNLP')

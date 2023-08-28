@@ -25,6 +25,10 @@ from transformers import (
 
 from transformers.utils import is_offline_mode
 
+import sys
+
+sys.path.append('../')
+
 logger = logging.getLogger(__name__)
 wandb.init(project='HumorNLP')
 
