@@ -1,11 +1,6 @@
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
-from typing import Optional, List
-
-import torch.cuda
-
 import wandb
 import evaluate
 import nltk  # Here to have a nice missing dependency error message early on
@@ -14,9 +9,9 @@ from datasets import load_dataset
 from filelock import FileLock
 from datetime import datetime
 import pandas as pd
-from sklearn.metrics import precision_score, recall_score, accuracy_score
+from sklearn.metrics import accuracy_score
+from Utils.utils import DataTrainingArguments, ModelArguments
 
-import transformers
 from transformers import (
     AutoConfig,
     AutoModelForSeq2SeqLM,
@@ -44,67 +39,19 @@ except (LookupError, OSError):
         nltk.download("punkt", quiet=True)
 
 
-@dataclass
-class ModelArguments:
-    model_name_or_path: str = field()
-    cache_dir: Optional[str] = field(default=None)
-    model_revision: str = field(
-        default="main",
-        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
-    )
-    use_auth_token: bool = field(
-        default=False,
-        metadata={
-            "help": (
-                "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
-                "with private models)."
-            )
-        },
-    )
-    config_name: Optional[str] = field(default=None)
-    tokenizer_name: Optional[str] = field(default=None)
-
-
-@dataclass
-class DataTrainingArguments:
-    dataset_name: Optional[str] = field(default=None)
-    trained_on: str = field(default='igg')
-    split_type: Optional[str] = field(default='no_val')
-    text_column: Optional[str] = field(default=None)
-    target_column: Optional[str] = field(default=None)
-    train_file: Optional[str] = field(default=None)
-    validation_file: Optional[str] = field(default=None)
-    test_file: Optional[str] = field(default=None)
-    datasets_to_predict: Optional[List[str]] = field(default=None)
-    epochs: Optional[List[int]] = field(default_factory=lambda: [3])
-    batch_sizes: Optional[List[int]] = field(default_factory=lambda: [8])
-    learning_rates: Optional[List[float]] = field(default_factory=lambda: [1e-5])
-    seeds: Optional[List[int]] = field(default_factory=lambda: [42])
-    max_source_length: Optional[int] = field(default=512)
-    max_target_length: Optional[int] = field(default=10)
-    val_max_target_length: Optional[int] = field(default=10)
-    pad_to_max_length: bool = field(default=False)
-    max_train_samples: Optional[int] = field(default=None)
-    max_eval_samples: Optional[int] = field(default=None)
-    max_predict_samples: Optional[int] = field(default=None)
-    ignore_pad_token_for_loss: bool = field(default=True)
-    source_prefix: Optional[str] = field(
-        default="", metadata={"help": "A prefix to add before every source text (useful for T5 models)."}
-    )
-
-
 class T5_Trainer:
     def __init__(self):
         self.trainer = None
         self.padding, self.max_target_length, self.prefix = None, None, None
         self.data_collator, self.metric = None, None
         self.target_column, self.text_column, self.dataset_columns = None, None, None
-        self.parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
-        self.model_args, self.data_args, self.training_args = self.parser.parse_args_into_dataclasses()
         self.raw_datasets = None
         self.config, self.tokenizer, self.model = None, None, None
         self.train_dataset, self.eval_dataset, self.predict_datasets = None, None, None
         self.results = {}
+
+        self.parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
+        self.model_args, self.data_args, self.training_args = self.parser.parse_args_into_dataclasses()
 
         # Setup logging
         logging.basicConfig(
@@ -112,13 +59,6 @@ class T5_Trainer:
             datefmt="%m/%d/%Y %H:%M:%S",
             handlers=[logging.StreamHandler(sys.stdout)],
         )
-
-        # clear gpu memory
-        with open("cuda_info_before.txt", "w") as f:
-            f.write(torch.cuda.memory_summary(device=None, abbreviated=None))
-        torch.cuda.empty_cache()
-        with open("cuda_info_after.txt", "w") as f:
-            f.write(torch.cuda.memory_summary(device=None, abbreviated=None))
 
     def pipeline(self):
         set_seed(self.training_args.seed)
@@ -211,7 +151,7 @@ class T5_Trainer:
         self.prefix = self.data_args.source_prefix if self.data_args.source_prefix is not None else ""
 
         # column names for input/target
-        self.dataset_columns = ('sentence', 'target')
+        self.dataset_columns = ('t5_sentence', 'target')
         if self.data_args.text_column is None:
             self.text_column = self.dataset_columns[0] if self.dataset_columns is not None else ''
         else:
@@ -393,7 +333,8 @@ class T5_Trainer:
             # elif last_checkpoint is not None:
             #     checkpoint = last_checkpoint
             train_result = self.trainer.train(resume_from_checkpoint=checkpoint)
-            self.trainer.save_model()  # Saves the tokenizer too for easy upload
+            if self.model_args.save_model:
+                self.trainer.save_model()  # Saves the tokenizer too for easy upload
 
             metrics = train_result.metrics
             max_train_samples = (
@@ -403,8 +344,10 @@ class T5_Trainer:
             metrics["train_samples"] = min(max_train_samples, len(self.train_dataset))
 
             self.trainer.log_metrics("train", metrics)
-            self.trainer.save_metrics("train", metrics)
-            self.trainer.save_state()
+            if self.model_args.save_metrics:
+                self.trainer.save_metrics("train", metrics)
+            if self.model_args.save_state:
+                self.trainer.save_state()
 
     def eval(self):
         # Evaluation
@@ -423,7 +366,8 @@ class T5_Trainer:
             metrics["eval_samples"] = min(max_eval_samples, len(self.eval_dataset))
 
             self.trainer.log_metrics("eval", metrics)
-            self.trainer.save_metrics("eval", metrics)
+            if self.model_args.save_metrics:
+                self.trainer.save_metrics("eval", metrics)
 
     def predict(self):
         # Predict
@@ -440,7 +384,8 @@ class T5_Trainer:
                 metrics["predict_samples"] = min(max_predict_samples, len(self.predict_datasets[i]))
 
                 self.trainer.log_metrics("predict", metrics)
-                self.trainer.save_metrics("predict", metrics)
+                if self.model_args.save_metrics:
+                    self.trainer.save_metrics("predict", metrics)
 
                 if self.trainer.is_world_process_zero():
                     if self.training_args.predict_with_generate:

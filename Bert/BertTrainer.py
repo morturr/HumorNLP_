@@ -1,3 +1,5 @@
+import evaluate
+
 from Utils.utils import DataTrainingArguments, ModelArguments, DEVICE
 import logging
 import wandb
@@ -31,8 +33,8 @@ class BertTrainer:
         self.model = None
         self.classifier = None
         self.raw_datasets = None
-        self._datasets = {}
-        self._trainer = None
+        self.results = {}
+        self.trainer = None
         self.dataset_columns = None
         self.text_column, self.label_column = None, None
         self.train_dataset, self.eval_dataset, self.predict_datasets = None, None, None
@@ -86,11 +88,12 @@ class BertTrainer:
             )
 
     def config_model(self):
-        self.config = BertConfig.from_pretrained(self._model_params['model_dir'])
-        self.tokenizer = BertTokenizer.from_pretrained(self._model_params['model_dir'])
-        self.model = BertForSequenceClassification.from_pretrained(self._model_params['model_dir'],
-                                                                   config=self._config).to(DEVICE)
+        self.config = BertConfig.from_pretrained(self.model_args.model_name_or_path)
+        self.tokenizer = BertTokenizer.from_pretrained(self.model_args.model_name_or_path)
+        self.model = BertForSequenceClassification.from_pretrained(self.model_args.model_name_or_path,
+                                                                   config=self.config).to(DEVICE)
         self.classifier = TextClassificationPipeline(model=self.model.to('cpu'), tokenizer=self.tokenizer)
+        self.metric = evaluate.load('accuracy')
 
     def set_data_attr(self):
         # column names for input/target
@@ -104,10 +107,10 @@ class BertTrainer:
         if self.data_args.label_column is None:
             self.label_column = self.dataset_columns[1] if self.dataset_columns is not None else ''
         else:
-            self.label_column = self.data_args.target_column
+            self.label_column = self.data_args.label_column
 
     def preprocess_function(self, data):
-        result = self._tokenizer(data[self.label_column], truncation=True, max_length=512)
+        result = self.tokenizer(data[self.text_column], truncation=True, max_length=512)
         return result
 
     def compute_metrics(self, p: EvalPrediction):
@@ -199,7 +202,7 @@ class BertTrainer:
                                                          self.training_args.run_name)
 
     def train(self):
-        self._trainer = Trainer(
+        self.trainer = Trainer(
             model=self.model,
             args=self.training_args,
             train_dataset=self.train_dataset if self.training_args.do_train else None,
@@ -209,7 +212,7 @@ class BertTrainer:
         )
 
         if self.training_args.do_train:
-            train_result = self._trainer.train()
+            train_result = self.trainer.train()
             if self.model_args.save_model:
                 self.trainer.save_model()  # Saves the tokenizer too for easy upload
 
@@ -243,14 +246,15 @@ class BertTrainer:
             metrics["eval_samples"] = min(max_eval_samples, len(self.eval_dataset))
 
             self.trainer.log_metrics("eval", metrics)
-            self.trainer.save_metrics("eval", metrics)
+            if self.model_args.save_metrics:
+                self.trainer.save_metrics("eval", metrics)
 
     def predict(self):
         if self.training_args.do_predict:
             logger.info("*** Predict ***")
             for i in range(len(self.predict_datasets)):
                 df_real = pd.read_csv(
-                    f'../Data/humor_datasets/{self.predict_datasets[i]}/{self.data_args.split_type}/test.csv')
+                    f'../Data/humor_datasets/{self.data_args.datasets_to_predict[i]}/{self.data_args.split_type}/test.csv')
                 max_predict_samples = (
                     min(self.data_args.max_predict_samples, len(df_real))
                     if self.data_args.max_predict_samples is not None else
@@ -258,7 +262,7 @@ class BertTrainer:
                 )
                 df_real = df_real.iloc[list(range(max_predict_samples))]
 
-                predictions = self.classifier(self.datasets[df_real]['bert_sentence'])  # , batch_size=1)
+                predictions = self.classifier(df_real['bert_sentence'].to_list())  # , batch_size=1)
                 df = pd.DataFrame.from_dict(predictions)
                 df_pred = pd.DataFrame()
                 df_pred['bert_sentence'] = df_real['bert_sentence']
@@ -271,7 +275,7 @@ class BertTrainer:
                 os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
                 output_prediction_file = os.path.join(
                     self.training_args.output_dir, 'predictions',
-                    "{dataset}_preds.csv".format(dataset=self.predict_datasets[i]))
+                    "{dataset}_preds.csv".format(dataset=self.data_args.datasets_to_predict[i]))
                 df_pred.to_csv(output_prediction_file, index=False)
 
     def compute_performance(self, ep, bs, lr, seed):
