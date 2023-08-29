@@ -16,13 +16,19 @@ t5_sentence \
 --target_column \
 target \
 --trained_on \
-igg \
+"igg" "amazon" \
+--compute_on \
+"igg" "amazon" \
 --split_type \
-no_val \
+with_val_fixed_train \
 --train_file \
-../Data/humor_datasets/igg/no_val/train.csv \
+../Data/humor_datasets/igg/with_val_fixed_train/train.csv \
 --test_file \
-../Data/humor_datasets/igg/no_val/test.csv \
+../Data/humor_datasets/igg/with_val_fixed_train/test.csv \
+--validation_file \
+../Data/humor_datasets/igg/with_val_fixed_train/val.csv \
+--data_path_template \
+../Data/humor_datasets/{dataset}/{split_type}/{split_name}.csv \
 --datasets_to_predict \
 "amazon" "headlines" "igg" "twss" \
 --epochs \
@@ -38,7 +44,7 @@ no_val \
 --do_train \
 True \
 --do_eval \
-False \
+True \
 --do_predict \
 True \
 --predict_with_generate \
@@ -55,6 +61,11 @@ False \
 10 \
 --max_predict_samples \
 10 \
-#--validation_file \
-#../Data/humor_datasets/igg/no_val/val.csv \
+--save_model \
+False \
+--save_metrics \
+False \
+--save_state \
+False
+
 
