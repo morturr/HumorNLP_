@@ -9,7 +9,7 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 @dataclass
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(default=None)
-    trained_on: str = field(default='igg')
+    trained_on: Optional[List[str]] = field(default_factory=lambda: ['amazon'])
     split_type: Optional[str] = field(default='with_val_fixed_train')
     text_column: Optional[str] = field(default=None)
     target_column: Optional[str] = field(default=None)
@@ -17,6 +17,7 @@ class DataTrainingArguments:
     train_file: Optional[str] = field(default=None)
     validation_file: Optional[str] = field(default=None)
     test_file: Optional[str] = field(default=None)
+    data_path_template: Optional[str] = field(default=None)
     datasets_to_predict: Optional[List[str]] = field(default=None)
     epochs: Optional[List[int]] = field(default_factory=lambda: [3])
     batch_sizes: Optional[List[int]] = field(default_factory=lambda: [8])

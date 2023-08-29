@@ -16,7 +16,7 @@ bert_sentence \
 --label_column \
 label \
 --trained_on \
-amazon \
+"amazon" \
 --split_type \
 "with_val_fixed_train" \
 --train_file \
@@ -25,6 +25,8 @@ amazon \
 ../Data/humor_datasets/amazon/with_val_fixed_train/test.csv \
 --validation_file \
 ../Data/humor_datasets/amazon/with_val_fixed_train/val.csv \
+--data_path_template \
+../Data/humor_datasets/{dataset}/{split_type}/{split_name}.csv \
 --datasets_to_predict \
 "amazon" "headlines" "igg" "twss" \
 --output_dir \

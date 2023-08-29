@@ -39,7 +39,8 @@ class BertTrainer:
         self.trainer = None
         self.dataset_columns = None
         self.text_column, self.label_column = None, None
-        self.train_dataset, self.eval_dataset, self.predict_datasets = None, None, None
+        self.train_datasets, self.eval_datasets, self.predict_datasets = None, None, None
+        self.train_idx = -1
         self.parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
         self.model_args, self.data_args, self.training_args = self.parser.parse_args_into_dataclasses()
 
@@ -50,7 +51,6 @@ class BertTrainer:
         self.set_data_attr()
         self.preprocess_datasets()
         self.train_and_predict()
-        self.save_results()
 
     def load_files(self):
         if (self.training_args.do_eval and 'no_val' in self.data_args.split_type) or \
@@ -74,14 +74,27 @@ class BertTrainer:
             if self.data_args.validation_file is not None:
                 data_files["validation"] = self.data_args.validation_file
                 extension = self.data_args.validation_file.split(".")[-1]
+            if len(self.data_args.trained_on) > 1:
+                for dataset in self.data_args.trained_on:
+                    curr_train_path = self.data_args.data_path_template.format(dataset=dataset,
+                                                                               split_type=self.data_args.split_type,
+                                                                               split_name='train')
+                    curr_val_path = self.data_args.data_path_template.format(dataset=dataset,
+                                                                             split_type=self.data_args.split_type,
+                                                                             split_name='val')
+                    data_files[f'{dataset}_train'] = curr_train_path
+                    data_files[f'{dataset}_validation'] = curr_val_path
+                extension = self.data_args.data_path_template.split(".")[-1]
             if self.data_args.test_file is not None:
                 data_files["test"] = self.data_args.test_file
                 extension = self.data_args.test_file.split(".")[-1]
             if self.data_args.datasets_to_predict is not None:
-                path_to_predict = '../Data/humor_datasets/{dataset}/{split_type}/test.csv'
+                extension = self.data_args.data_path_template.split(".")[-1]
                 for dataset in self.data_args.datasets_to_predict:
-                    curr_path = path_to_predict.format(dataset=dataset, split_type=self.data_args.split_type)
-                    data_files[dataset] = curr_path
+                    curr_predict_path = self.data_args.data_path_template.format(dataset=dataset,
+                                                                                 split_type=self.data_args.split_type,
+                                                                                 split_name='test')
+                    data_files[f'{dataset}_test'] = curr_predict_path
             self.raw_datasets = load_dataset(
                 extension,
                 data_files=data_files,
@@ -94,7 +107,7 @@ class BertTrainer:
         self.tokenizer = BertTokenizer.from_pretrained(self.model_args.model_name_or_path)
         self.model = BertForSequenceClassification.from_pretrained(self.model_args.model_name_or_path,
                                                                    config=self.config).to(DEVICE)
-        self.classifier = TextClassificationPipeline(model=self.model.to(DEVICE), tokenizer=self.tokenizer).to(DEVICE)
+        self.classifier = TextClassificationPipeline(model=self.model, tokenizer=self.tokenizer, device=0)
         self.metric = evaluate.load('accuracy')
 
     def set_data_attr(self):
@@ -123,33 +136,47 @@ class BertTrainer:
 
     def preprocess_datasets(self):
         if self.training_args.do_train:
-            self.train_dataset = self.raw_datasets["train"]
-            if self.data_args.max_train_samples is not None:
-                max_train_samples = min(len(self.train_dataset), self.data_args.max_train_samples)
-                self.train_dataset = self.train_dataset.select(range(max_train_samples))
-            with self.training_args.main_process_first(desc="train dataset map pre-processing"):
-                self.train_dataset = self.train_dataset.map(
-                    self.preprocess_function,
-                    batched=True)
-                # remove_columns=self.train_dataset.column_names,  ## all columns??)
+            train_dataset = self.raw_datasets["train"]
+            if len(self.data_args.trained_on) > 1:
+                self.train_datasets = []
+                for dataset in self.data_args.trained_on:
+                    self.train_datasets.append(self.raw_datasets[f'{dataset}_train'])
+            else:
+                self.train_datasets = [train_dataset]
+            for i in range(len(self.train_datasets)):
+                if self.data_args.max_train_samples is not None:
+                    max_train_samples = min(len(self.train_datasets[i]), self.data_args.max_train_samples)
+                    self.train_datasets[i] = self.train_datasets[i].select(range(max_train_samples))
+                with self.training_args.main_process_first(desc="train dataset map pre-processing"):
+                    self.train_datasets[i] = self.train_datasets[i].map(
+                        self.preprocess_function,
+                        batched=True)
+                    # remove_columns=self.train_datasets[i].column_names,  ## all columns??)
 
         if self.training_args.do_eval:
-            self.eval_dataset = self.raw_datasets["validation"]
-            if self.data_args.max_eval_samples is not None:
-                max_eval_samples = min(len(self.eval_dataset), self.data_args.max_eval_samples)
-                self.eval_dataset = self.eval_dataset.select(range(max_eval_samples))
-            with self.training_args.main_process_first(desc="validation dataset map pre-processing"):
-                self.eval_dataset = self.eval_dataset.map(
-                    self.preprocess_function,
-                    batched=True)
-                # remove_columns=self.eval_dataset.column_names)
+            eval_dataset = self.raw_datasets["validation"]
+            if len(self.data_args.trained_on) > 1:
+                self.eval_datasets = []
+                for dataset in self.data_args.trained_on:
+                    self.eval_datasets.append(self.raw_datasets[f'{dataset}_validation'])
+            else:
+                self.eval_datasets = [eval_dataset]
+            for i in range(len(self.eval_datasets)):
+                if self.data_args.max_eval_samples is not None:
+                    max_eval_samples = min(len(self.eval_datasets[i]), self.data_args.max_eval_samples)
+                    self.eval_datasets[i] = self.eval_datasets[i].select(range(max_eval_samples))
+                with self.training_args.main_process_first(desc="validation dataset map pre-processing"):
+                    self.eval_datasets[i] = self.eval_datasets[i].map(
+                        self.preprocess_function,
+                        batched=True)
+                    # remove_columns=self.eval_datasets[i].column_names)
 
         if self.training_args.do_predict:
             predict_dataset = self.raw_datasets["test"]
             if self.data_args.datasets_to_predict:
                 self.predict_datasets = []
                 for dataset in self.data_args.datasets_to_predict:
-                    self.predict_datasets.append(self.raw_datasets[dataset])
+                    self.predict_datasets.append(self.raw_datasets[f'{dataset}_test'])
             else:
                 self.predict_datasets = [predict_dataset]
 
@@ -170,16 +197,20 @@ class BertTrainer:
         seeds = self.data_args.seeds
         general_output_dir = self.training_args.output_dir
 
-        for ep in epochs:
-            for bs in batch_sizes:
-                for lr in lrs:
-                    for seed in seeds:
-                        self.set_run_details(ep, bs, lr, seed, general_output_dir)
-                        self.train()
-                        self.eval()
-                        self.predict()
-                        self.compute_performance(ep, bs, lr, seed)
-                        wandb.finish()
+        for i in range(len(self.data_args.trained_on)):
+            self.train_idx = i
+            for ep in epochs:
+                for bs in batch_sizes:
+                    for lr in lrs:
+                        for seed in seeds:
+                            self.set_run_details(ep, bs, lr, seed, general_output_dir)
+                            self.train()
+                            self.eval()
+                            self.predict()
+                            self.compute_performance(ep, bs, lr, seed)
+                            wandb.finish()
+
+            self.save_results()
 
     def set_run_details(self, ep, bs, lr, seed, general_output_dir):
         self.training_args.num_train_epochs = ep
@@ -192,7 +223,7 @@ class BertTrainer:
                                       '_lr={lr}_{date}_{hour}_{minute}'.format(
             model_name=self.model_args.model_name_or_path,
             date=time.date(), hour=time.hour, minute=time.minute,
-            trained_on=self.data_args.trained_on, seed=self.training_args.seed,
+            trained_on=self.data_args.trained_on[self.train_idx], seed=self.training_args.seed,
             ep=self.training_args.num_train_epochs,
             bs=self.training_args.per_device_train_batch_size,
             lr=self.training_args.learning_rate,
@@ -207,8 +238,8 @@ class BertTrainer:
         self.trainer = Trainer(
             model=self.model,
             args=self.training_args,
-            train_dataset=self.train_dataset if self.training_args.do_train else None,
-            eval_dataset=self.eval_dataset if self.training_args.do_eval else None,
+            train_dataset=self.train_datasets[self.train_idx] if self.training_args.do_train else None,
+            eval_dataset=self.eval_datasets[self.train_idx] if self.training_args.do_eval else None,
             compute_metrics=self.compute_metrics,
             tokenizer=self.tokenizer
         )
@@ -221,9 +252,9 @@ class BertTrainer:
             metrics = train_result.metrics
             max_train_samples = (
                 self.data_args.max_train_samples if self.data_args.max_train_samples is not None else len(
-                    self.train_dataset)
+                    self.train_datasets[self.train_idx])
             )
-            metrics["train_samples"] = min(max_train_samples, len(self.train_dataset))
+            metrics["train_samples"] = min(max_train_samples, len(self.train_datasets[self.train_idx]))
 
             self.trainer.log_metrics("train", metrics)
             if self.model_args.save_metrics:
@@ -235,17 +266,17 @@ class BertTrainer:
         # Evaluation
         if self.training_args.do_eval:
             logger.info("*** Evaluate ***")
-            if isinstance(self.eval_dataset, dict):
+            if isinstance(self.eval_datasets[self.train_idx], dict):
                 metrics = {}
-                for eval_ds_name, eval_ds in self.eval_dataset.items():
+                for eval_ds_name, eval_ds in self.eval_datasets[self.train_idx].items():
                     dataset_metrics = self.trainer.evaluate(eval_dataset=eval_ds,
                                                             metric_key_prefix=f"eval_{eval_ds_name}")
                     metrics.update(dataset_metrics)
             else:
                 metrics = self.trainer.evaluate(metric_key_prefix="eval")
             max_eval_samples = self.data_args.max_eval_samples if self.data_args.max_eval_samples is not None else len(
-                self.eval_dataset)
-            metrics["eval_samples"] = min(max_eval_samples, len(self.eval_dataset))
+                self.eval_datasets[self.train_idx])
+            metrics["eval_samples"] = min(max_eval_samples, len(self.eval_datasets[self.train_idx]))
 
             self.trainer.log_metrics("eval", metrics)
             if self.model_args.save_metrics:
@@ -281,7 +312,7 @@ class BertTrainer:
                 df_pred.to_csv(output_prediction_file, index=False)
 
     def compute_performance(self, ep, bs, lr, seed):
-        dataset_name = self.data_args.trained_on
+        dataset_name = self.data_args.trained_on[self.train_idx]
         df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
         prediction_file = os.path.join(
             self.training_args.output_dir, 'predictions',
@@ -295,7 +326,7 @@ class BertTrainer:
         time = datetime.now()
         results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}_{hour}_{minute}.txt'.format(
             model_name=self.model_args.model_name_or_path,
-            dataset=self.data_args.trained_on,
+            dataset=self.data_args.trained_on[self.train_idx],
             date=time.date(),
             hour=time.hour, minute=time.minute
         )
