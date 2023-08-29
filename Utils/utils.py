@@ -10,6 +10,7 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(default=None)
     trained_on: Optional[List[str]] = field(default_factory=lambda: ['amazon'])
+    compute_on: Optional[List[str]] = field(default_factory=lambda: ['amazon'])
     split_type: Optional[str] = field(default='with_val_fixed_train')
     text_column: Optional[str] = field(default=None)
     target_column: Optional[str] = field(default=None)

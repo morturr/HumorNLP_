@@ -316,7 +316,7 @@ class BertTrainer:
         df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
         prediction_file = os.path.join(
             self.training_args.output_dir, 'predictions',
-            "{dataset}_preds.csv".format(dataset=dataset_name))
+            "{dataset}_preds.csv".format(dataset=self.data_args.compute_on[self.train_idx]))
         df_pred = pd.read_csv(prediction_file)
         df_real = df_real.iloc[:len(df_pred)]
 

@@ -16,7 +16,9 @@ bert_sentence \
 --label_column \
 label \
 --trained_on \
-"amazon" \
+"amazon" "igg" \
+--compute_on \
+"amazon" "igg" \
 --split_type \
 "with_val_fixed_train" \
 --train_file \
