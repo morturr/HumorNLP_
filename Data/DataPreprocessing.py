@@ -2,6 +2,7 @@ import os
 import pandas as pd
 from datasets import DatasetDict, Dataset
 from sklearn.model_selection import train_test_split
+from itertools import combinations
 
 
 class DataPreprocessing:
@@ -267,10 +268,42 @@ class DataPreprocessing:
                 train_size = len(df)
         return train_size
 
+    @staticmethod
+    def create_pair_datasets():
+        def get_half_balanced_df(df):
+            label_1 = df[df.label == 1]
+            label_0 = df[df.label == 0]
+            label_size = int(len(df) / 4)
+            label_1 = label_1.iloc[:label_size]
+            label_0 = label_0.iloc[:label_size]
+            new_df = label_1.append(label_0, ignore_index=True)
+            new_df = new_df.sample(frac=1, random_state=0, ignore_index=True)
+            return new_df
 
+        datasets = ['amazon', 'headlines', 'igg', 'twss']
+        data_path = './humor_datasets'
+        split_type = 'with_val_fixed_train'
+        output_path = data_path + '/paired_datasets/'
+        pair_dataset = list(combinations(datasets, 2))
+        dfs = {}
+
+        for dataset in datasets:
+            df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/train.csv')
+            dfs[dataset] = get_half_balanced_df(df)
+
+        for pair in pair_dataset:
+            dataset1, dataset2 = pair[0], pair[1]
+            df1 = dfs[dataset1]
+            df2 = dfs[dataset2]
+            merged_df = df1.append(df2, ignore_index=True)
+            merged_df = merged_df.sample(frac=1, random_state=0, ignore_index=False)
+            merged_path = output_path + f'{dataset1}_{dataset2}/'
+            os.makedirs(merged_path, exist_ok=True)
+            merged_df.to_csv(merged_path + 'train.csv', index=False)
 
 
 if __name__ == '__main__':
     ## constructing datasets
     # DataPreprocessing.preprocess_datasets()
-    DataPreprocessing.create_fixed_size_train()
+    # DataPreprocessing.create_fixed_size_train()
+    DataPreprocessing.create_pair_datasets()
