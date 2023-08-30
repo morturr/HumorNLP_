@@ -269,8 +269,8 @@ class DataPreprocessing:
         return train_size
 
     @staticmethod
-    def create_pair_datasets():
-        def get_half_balanced_df(df):
+    def create_pair_datasets(split_name):
+        def get_half_balanced_train(df):
             label_1 = df[df.label == 1]
             label_0 = df[df.label == 0]
             label_size = int(len(df) / 4)
@@ -280,6 +280,16 @@ class DataPreprocessing:
             new_df = new_df.sample(frac=1, random_state=0, ignore_index=True)
             return new_df
 
+        def get_fixed_size_val():
+            min_val_size = None
+            for dataset in datasets:
+                df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/val.csv')
+                if min_val_size is None or len(df) < min_val_size:
+                    min_val_size = len(df)
+
+            return min_val_size
+
+
         datasets = ['amazon', 'headlines', 'igg', 'twss']
         data_path = './humor_datasets'
         split_type = 'with_val_fixed_train'
@@ -288,8 +298,12 @@ class DataPreprocessing:
         dfs = {}
 
         for dataset in datasets:
-            df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/train.csv')
-            dfs[dataset] = get_half_balanced_df(df)
+            df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/{split_name}.csv')
+            if split_name == 'train':
+                dfs[dataset] = get_half_balanced_train(df)
+            elif split_name == 'val':
+                size = get_fixed_size_val()
+                dfs[dataset] = df.iloc[:size]
 
         for pair in pair_dataset:
             dataset1, dataset2 = pair[0], pair[1]
@@ -299,11 +313,13 @@ class DataPreprocessing:
             merged_df = merged_df.sample(frac=1, random_state=0, ignore_index=False)
             merged_path = output_path + f'{dataset1}_{dataset2}/'
             os.makedirs(merged_path, exist_ok=True)
-            merged_df.to_csv(merged_path + 'train.csv', index=False)
+            merged_df.to_csv(merged_path + f'{split_name}.csv', index=False)
 
 
 if __name__ == '__main__':
     ## constructing datasets
     # DataPreprocessing.preprocess_datasets()
     # DataPreprocessing.create_fixed_size_train()
-    DataPreprocessing.create_pair_datasets()
+    # split_name = 'train'
+    split_name = 'val'
+    DataPreprocessing.create_pair_datasets(split_name)
