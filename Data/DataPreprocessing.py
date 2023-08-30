@@ -311,7 +311,7 @@ class DataPreprocessing:
             df2 = dfs[dataset2]
             merged_df = df1.append(df2, ignore_index=True)
             merged_df = merged_df.sample(frac=1, random_state=0, ignore_index=False)
-            merged_path = output_path + f'{dataset1}_{dataset2}/'
+            merged_path = output_path + f'{dataset1}_{dataset2}/{split_type}/'
             os.makedirs(merged_path, exist_ok=True)
             merged_df.to_csv(merged_path + f'{split_name}.csv', index=False)
 
@@ -322,4 +322,6 @@ if __name__ == '__main__':
     # DataPreprocessing.create_fixed_size_train()
     # split_name = 'train'
     split_name = 'val'
+    DataPreprocessing.create_pair_datasets(split_name)
+    split_name = 'train'
     DataPreprocessing.create_pair_datasets(split_name)

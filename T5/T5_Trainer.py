@@ -97,22 +97,22 @@ class T5_Trainer:
                 extension = self.data_args.validation_file.split(".")[-1]
             if len(self.data_args.trained_on) > 1:
                 for dataset in self.data_args.trained_on:
-                    curr_train_path = self.data_args.data_path_template.format(dataset=dataset,
+                    curr_train_path = self.data_args.train_path_template.format(dataset=dataset,
                                                                                split_type=self.data_args.split_type,
                                                                                split_name='train')
-                    curr_val_path = self.data_args.data_path_template.format(dataset=dataset,
+                    curr_val_path = self.data_args.train_path_template.format(dataset=dataset,
                                                                              split_type=self.data_args.split_type,
                                                                              split_name='val')
                     data_files[f'{dataset}_train'] = curr_train_path
                     data_files[f'{dataset}_validation'] = curr_val_path
-                extension = self.data_args.data_path_template.split(".")[-1]
+                extension = self.data_args.train_path_template.split(".")[-1]
             if self.data_args.test_file is not None:
                 data_files["test"] = self.data_args.test_file
                 extension = self.data_args.test_file.split(".")[-1]
             if self.data_args.datasets_to_predict is not None:
-                extension = self.data_args.data_path_template.split(".")[-1]
+                extension = self.data_args.test_path_template.split(".")[-1]
                 for dataset in self.data_args.datasets_to_predict:
-                    curr_predict_path = self.data_args.data_path_template.format(dataset=dataset,
+                    curr_predict_path = self.data_args.test_path_template.format(dataset=dataset,
                                                                                  split_type=self.data_args.split_type,
                                                                                  split_name='test')
                     data_files[f'{dataset}_test'] = curr_predict_path

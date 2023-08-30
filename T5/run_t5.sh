@@ -16,9 +16,9 @@ t5_sentence \
 --target_column \
 target \
 --trained_on \
-"igg" "amazon" \
+"amazon_headlines" \
 --compute_on \
-"igg" "amazon" \
+"amazon" \
 --split_type \
 with_val_fixed_train \
 --train_file \
@@ -27,7 +27,9 @@ with_val_fixed_train \
 ../Data/humor_datasets/igg/with_val_fixed_train/test.csv \
 --validation_file \
 ../Data/humor_datasets/igg/with_val_fixed_train/val.csv \
---data_path_template \
+--train_path_template \
+../Data/humor_datasets/paired_datasets/{dataset}/{split_type}/{split_name}.csv \
+--test_path_template \
 ../Data/humor_datasets/{dataset}/{split_type}/{split_name}.csv \
 --datasets_to_predict \
 "amazon" "headlines" "igg" "twss" \
