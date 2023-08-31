@@ -95,7 +95,7 @@ class T5_Trainer:
             if self.data_args.validation_file is not None:
                 data_files["validation"] = self.data_args.validation_file
                 extension = self.data_args.validation_file.split(".")[-1]
-            if len(self.data_args.trained_on) > 1:
+            if self.data_args.train_path_template is not None:
                 for dataset in self.data_args.trained_on:
                     curr_train_path = self.data_args.train_path_template.format(dataset=dataset,
                                                                                split_type=self.data_args.split_type,
@@ -109,7 +109,8 @@ class T5_Trainer:
             if self.data_args.test_file is not None:
                 data_files["test"] = self.data_args.test_file
                 extension = self.data_args.test_file.split(".")[-1]
-            if self.data_args.datasets_to_predict is not None:
+            if self.data_args.datasets_to_predict is not None and \
+                self.data_args.test_path_template is not None:
                 extension = self.data_args.test_path_template.split(".")[-1]
                 for dataset in self.data_args.datasets_to_predict:
                     curr_predict_path = self.data_args.test_path_template.format(dataset=dataset,
