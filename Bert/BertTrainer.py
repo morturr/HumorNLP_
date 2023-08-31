@@ -138,7 +138,7 @@ class BertTrainer:
     def preprocess_datasets(self):
         if self.training_args.do_train:
             train_dataset = self.raw_datasets["train"]
-            if len(self.data_args.trained_on) > 1:
+            if self.data_args.train_path_template is not None:
                 self.train_datasets = []
                 for dataset in self.data_args.trained_on:
                     self.train_datasets.append(self.raw_datasets[f'{dataset}_train'])
@@ -156,7 +156,7 @@ class BertTrainer:
 
         if self.training_args.do_eval:
             eval_dataset = self.raw_datasets["validation"]
-            if len(self.data_args.trained_on) > 1:
+            if self.data_args.train_path_template is not None:
                 self.eval_datasets = []
                 for dataset in self.data_args.trained_on:
                     self.eval_datasets.append(self.raw_datasets[f'{dataset}_validation'])
@@ -174,7 +174,8 @@ class BertTrainer:
 
         if self.training_args.do_predict:
             predict_dataset = self.raw_datasets["test"]
-            if self.data_args.datasets_to_predict:
+            if self.data_args.datasets_to_predict and \
+                    self.data_args.test_path_template is not None:
                 self.predict_datasets = []
                 for dataset in self.data_args.datasets_to_predict:
                     self.predict_datasets.append(self.raw_datasets[f'{dataset}_test'])
