@@ -264,7 +264,8 @@ class T5_Trainer:
                     )
 
         if self.training_args.do_predict:
-            predict_dataset = self.raw_datasets["test"]
+            if self.data_args.test_file:
+                predict_dataset = self.raw_datasets["test"]
             if self.data_args.datasets_to_predict and \
                     self.data_args.test_path_template:
                 self.predict_datasets = []
