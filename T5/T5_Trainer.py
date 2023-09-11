@@ -471,7 +471,10 @@ class T5_Trainer:
         df = df.apply(edit_row, axis=1)
         df_pred = df
 
-        df_real = pd.read_csv(f'../Data/humor_datasets/{predict_dataset}/{self.data_args.split_type}/test.csv')
+        # df_real = pd.read_csv(f'../Data/humor_datasets/{predict_dataset}/{self.data_args.split_type}/test.csv')
+        df_real = pd.read_csv(self.data_args.test_path_template.format(
+            dataset=predict_dataset, split_type=self.data_args.split_type, split_name='test'
+        ))
         max_predict_samples = (
             min(self.data_args.max_predict_samples, len(df_real))
             if self.data_args.max_predict_samples is not None else
@@ -493,7 +496,10 @@ class T5_Trainer:
     # TODO edit this function and do it in a good way! its just cause i dont feel comfortable
     def compute_performance(self, ep, bs, lr, seed):
         dataset_name = self.data_args.compute_on[self.train_idx]
-        df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
+        # df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
+        df_real = pd.read_csv(self.data_args.test_path_template.format(
+            dataset=dataset_name, split_type=self.data_args.split_type, split_name='test'
+        ))
         prediction_file = os.path.join(
             self.training_args.output_dir, 'predictions',
             "{dataset}_preds.csv".format(dataset=dataset_name))

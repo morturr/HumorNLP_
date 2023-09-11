@@ -75,6 +75,24 @@ class DataPreprocessing:
         return train_df, test_df
 
     @staticmethod
+    def balance_dataframe(df):
+        df_label_1 = df[df['label'] == 1]
+        df_label_0 = df[df['label'] == 0]
+        larger_df = df_label_1 if len(df_label_1) > len(df_label_0) else df_label_0
+        shorter_df = df_label_0 if len(df_label_1) > len(df_label_0) else df_label_1
+        labels_diff = abs(len(df_label_1) - len(df_label_0))
+
+        if labels_diff > 0:
+            larger_df = larger_df.iloc[labels_diff:]
+            new_df = larger_df.append(shorter_df)
+            new_df = new_df.sample(frac=1, random_state=0, ignore_index=True)
+            return new_df
+
+        else:
+            return df
+
+
+    @staticmethod
     def split_train_test(df, path):
         os.makedirs(path, exist_ok=True)
         train, test = train_test_split(df, test_size=0.2, shuffle=True, random_state=0)
@@ -130,7 +148,7 @@ class DataPreprocessing:
 
         input_path = './original_datasets/headlines'
         output_path = './humor_datasets/headlines'
-
+        # output_path = './humor_datasets/headlines/sanity-check'
         origin_train = pd.read_csv(f'{input_path}/train.csv')
         origin_test = pd.read_csv(f'{input_path}/test.csv')
         df = origin_train.append(origin_test, ignore_index=True)
@@ -315,13 +333,32 @@ class DataPreprocessing:
             os.makedirs(merged_path, exist_ok=True)
             merged_df.to_csv(merged_path + f'{split_name}.csv', index=False)
 
+    @staticmethod
+    def create_kfold_cv_data():
+        datasets = ['headlines']
+        output_path = './humor_datasets/{dataset}/kfold_cv/'
+        input_path = './humor_datasets/{dataset}/data.csv'
+
+        for dataset in datasets:
+            df = pd.read_csv(input_path.format(dataset=dataset))
+            balanced_df = DataPreprocessing.balance_dataframe(df)
+            curr_output_path = output_path.format(dataset=dataset)
+            os.makedirs(curr_output_path, exist_ok=True)
+            balanced_df.to_csv(curr_output_path + 'data.csv', index=False)
+
 
 if __name__ == '__main__':
     ## constructing datasets
     # DataPreprocessing.preprocess_datasets()
     # DataPreprocessing.create_fixed_size_train()
     # split_name = 'train'
-    split_name = 'val'
-    DataPreprocessing.create_pair_datasets(split_name)
-    split_name = 'train'
-    DataPreprocessing.create_pair_datasets(split_name)
+    # split_name = 'val'
+    # DataPreprocessing.create_pair_datasets(split_name)
+    # split_name = 'train'
+    # DataPreprocessing.create_pair_datasets(split_name)
+
+    ## check headlines creation
+    # DataPreprocessing.preprocess_headlines()
+    # DataPreprocessing.create_fixed_size_train()
+    DataPreprocessing.create_kfold_cv_data()
+
