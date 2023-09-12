@@ -562,8 +562,8 @@ class T5_Trainer:
             illegal_indices = df_pred[df_pred.label == -1].index
             print(f'there are {len(illegal_indices)} illegal indices in {self.data_args.trained_on[self.train_idx]}'
                   f' predictions on {predict_dataset}')
-            df_pred_legal = df_pred.drop(labels=illegal_indices, axis=0)
-            df_real_legal = df_real.drop(labels=illegal_indices, axis=0)
+            df_pred = df_pred.drop(labels=illegal_indices, axis=0)
+            df_real = df_real.drop(labels=illegal_indices, axis=0)
 
         accuracy = float("%.4f" % accuracy_score(df_real.label, df_pred.label))
         recall = float("%.4f" % recall_score(df_real.label, df_pred.label))
