@@ -241,7 +241,8 @@ class T5_Trainer:
 
     def preprocess_datasets(self):
         if self.training_args.do_train:
-            train_dataset = self.raw_datasets["train"]
+            if self.data_args.train_file:
+                train_dataset = self.raw_datasets["train"]
             if self.data_args.train_path_template is not None:
                 print_cur_time('Loading train datasets from train_path_template')
                 self.train_datasets = []
@@ -264,7 +265,8 @@ class T5_Trainer:
                     )
 
         if self.training_args.do_eval:
-            eval_dataset = self.raw_datasets["validation"]
+            if self.data_args.validation_file:
+                eval_dataset = self.raw_datasets["validation"]
             if self.data_args.train_path_template is not None:
                 print_cur_time('Loading validation datasets from train_path_template')
                 self.eval_datasets = []
