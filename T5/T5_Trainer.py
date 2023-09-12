@@ -145,6 +145,19 @@ class T5_Trainer:
             use_auth_token=True if self.model_args.use_auth_token else None,
         )
 
+        # Metric
+        self.metric = evaluate.load("rouge")
+
+    def init_model(self):
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(
+            self.model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in self.model_args.model_name_or_path),
+            config=self.config,
+            cache_dir=self.model_args.cache_dir,
+            revision=self.model_args.model_revision,
+            use_auth_token=True if self.model_args.use_auth_token else None,
+        )
+
         # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
         # on a small vocab and want a smaller embedding size, remove this test.
         embedding_size = self.model.get_input_embeddings().weight.shape[0]
@@ -158,19 +171,6 @@ class T5_Trainer:
             model=self.model,
             label_pad_token_id=label_pad_token_id,
             pad_to_multiple_of=8 if self.training_args.fp16 else None,
-        )
-
-        # Metric
-        self.metric = evaluate.load("rouge")
-
-    def init_model(self):
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(
-            self.model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in self.model_args.model_name_or_path),
-            config=self.config,
-            cache_dir=self.model_args.cache_dir,
-            revision=self.model_args.model_revision,
-            use_auth_token=True if self.model_args.use_auth_token else None,
         )
 
     def set_data_attr(self):
