@@ -1,7 +1,7 @@
 import logging
 import os
 import sys
-import wandb
+# import wandb
 import evaluate
 import nltk  # Here to have a nice missing dependency error message early on
 import numpy as np
@@ -30,7 +30,7 @@ sys.path.append('../')
 from Utils.utils import DataTrainingArguments, ModelArguments, print_cur_time
 
 logger = logging.getLogger(__name__)
-wandb.init(project='HumorNLP')
+# wandb.init(project='HumorNLP')
 
 try:
     nltk.data.find("tokenizers/punkt")
@@ -364,7 +364,7 @@ class T5_Trainer:
                             self.eval()
                             self.predict(ep, bs, lr, seed)
                             self.compute_performance(ep, bs, lr, seed)
-                            wandb.finish()
+                            # wandb.finish()
 
             self.save_results()
 
@@ -388,8 +388,8 @@ class T5_Trainer:
             lr=self.training_args.learning_rate,
             split_type=self.data_args.split_type)
 
-        wandb.init(project='HumorNLP', name=self.training_args.run_name)
-        wandb.run.name = self.training_args.run_name
+        # wandb.init(project='HumorNLP', name=self.training_args.run_name)
+        # wandb.run.name = self.training_args.run_name
         self.training_args.output_dir = '{0}/{1}'.format(general_output_dir,
                                                          self.training_args.run_name)
 
@@ -631,6 +631,9 @@ class T5_Trainer:
             for k, v in self.results.items():
                 f.write(f'ep: {k[0]}, bs: {k[1]}, lr: {k[2]}, seed: {k[3]}\n')
                 f.write(f'accuracy = {v[0]} on {v[1]}% legal \n')
+
+        self.results_df.to_csv(self.run_dir_name + 'models_accuracy.csv', index=False)
+        self.final_results_df.to_csv(self.run_dir_name + 'models_performance_all.csv', index=False)
 
     @staticmethod
     def postprocess_text(preds, labels):
