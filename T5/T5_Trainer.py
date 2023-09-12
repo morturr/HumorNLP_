@@ -9,7 +9,7 @@ from datasets import load_dataset
 from filelock import FileLock
 from datetime import datetime
 import pandas as pd
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, recall_score, precision_score
 
 from transformers import (
     AutoConfig,
@@ -55,9 +55,11 @@ class T5_Trainer:
         self.train_idx = -1
         self.results = {}
         self.results_df = None
+        self.final_results_df = None
 
         self.parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
         self.model_args, self.data_args, self.training_args = self.parser.parse_args_into_dataclasses()
+        self.run_dir_name = None
 
         # Setup logging
         logging.basicConfig(
@@ -69,11 +71,22 @@ class T5_Trainer:
     def pipeline(self):
         print_cur_time('STARTING PIPELINE')
         set_seed(self.training_args.seed)
+        self.init_run_dir()
         self.load_files()
         self.config_and_tokenizer()
         self.set_data_attr()
         self.preprocess_datasets()
         self.train_and_predict()
+        print_cur_time('ENDING PIPELINE')
+
+    def init_run_dir(self):
+        time = datetime.now()
+        self.run_dir_name = '../Data/output/results/runs/{model_name}_{date}_{hour}_{minute}/'.format(
+            model_name=self.model_args.model_name_or_path,
+            date=time.date(),
+            hour=time.hour, minute=time.minute
+        )
+        os.makedirs(self.run_dir_name, exist_ok=True)
 
     def load_files(self):
         if (self.training_args.do_eval and 'no_val' in self.data_args.split_type) or \
@@ -330,9 +343,15 @@ class T5_Trainer:
         self.results_df = pd.DataFrame(columns=['dataset', 'epoch', 'batch_size', 'learning_rate',
                                                 'seed', 'accuracy'])
 
+        self.final_results_df = pd.DataFrame(columns=['model', 'trained_on', 'epoch', 'batch_size',
+                                                      'learning_rate', 'seed', 'predict_on', 'accuracy',
+                                                      'recall', 'precision'])
+
         for i in range(len(self.data_args.trained_on)):
             self.train_idx = i
+            # init results for this dataset
             self.results = {}
+
             for ep in epochs:
                 for bs in batch_sizes:
                     for lr in lrs:
@@ -341,18 +360,14 @@ class T5_Trainer:
                             self.init_model()
                             self.train()
                             self.eval()
-                            self.predict()
+                            self.predict(ep, bs, lr, seed)
                             self.compute_performance(ep, bs, lr, seed)
                             wandb.finish()
 
             self.save_results()
 
-        time = datetime.now()
-        results_df_file_path = '../Data/output/results/models_accuracy_{date}_{hour}_{minute}.csv'.format(
-            date=time.date(),
-            hour=time.hour, minute=time.minute
-        )
-        self.results_df.to_csv(results_df_file_path, index=False)
+        self.results_df.to_csv(self.run_dir_name + 'models_accuracy.csv', index=False)
+        self.final_results_df.to_csv(self.run_dir_name + 'models_performance_all.csv', index=False)
 
     def set_run_details(self, ep, bs, lr, seed, general_output_dir):
         self.training_args.num_train_epochs = ep
@@ -441,7 +456,7 @@ class T5_Trainer:
 
             print_cur_time(f'END EVAL ON {self.training_args.run_name}')
 
-    def predict(self):
+    def predict(self, ep, bs, lr, seed):
         # Predict
         if self.training_args.do_predict:
             logger.info("*** Predict ***")
@@ -479,13 +494,14 @@ class T5_Trainer:
                                             for tokens in predicted_tokens]
                         predictions = [self.tokenizer.decode(tokens) for tokens in predicted_tokens]
 
-                        self.save_predictions(predictions, self.data_args.datasets_to_predict[i])
+                        self.save_predictions(predictions, self.data_args.datasets_to_predict[i],
+                                              ep, bs, lr, seed)
 
                 print_cur_time(f'END PREDICT ON {self.data_args.datasets_to_predict[i]}')
 
             print_cur_time(f'END PREDICT OF {self.training_args.run_name}')
 
-    def save_predictions(self, predictions, predict_dataset):
+    def save_predictions(self, predictions, predict_dataset, ep, bs, lr, seed):
         def edit_row(row):
             if row['original'] not in ['funny', 'not funny']:
                 row['edited'] = True
@@ -529,8 +545,22 @@ class T5_Trainer:
         df_real = df_real.iloc[list(range(max_predict_samples))]
         df_pred['t5_sentence'] = df_real['t5_sentence']
         df_pred['id'] = df_real['id']
-        cols = ['id', 't5_sentence', 'target', 'label', 'original', 'edited']
+        df_real['true_label'] = df_real['label']
+        cols = ['id', 't5_sentence', 'target', 'label', 'true_label', 'original', 'edited']
         df_pred = df_pred[cols]
+
+        accuracy = float("%.4f" % accuracy_score(df_real.label, df_pred.label))
+        recall = float("%.4f" % recall_score(df_real.label, df_pred.label))
+        precision = float("%.4f" % precision_score(df_real.label, df_pred.label))
+
+        row_to_final_results = {'model': self.model_args.model_name_or_path,
+                                'trained_on': self.data_args.trained_on[self.train_idx],
+                                'epoch': ep, 'batch_size': bs,
+                                'learning_rate': lr, 'seed': seed,
+                                'predict_on': predict_dataset,
+                                'accuracy': accuracy, 'recall': recall, 'precision': precision}
+
+        self.final_results_df = self.final_results_df.append([row_to_final_results])
 
         os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
         output_prediction_file = os.path.join(
@@ -568,6 +598,7 @@ class T5_Trainer:
         percent_legal = (legal_count / total_count) * 100
         accuracy = accuracy_score(df_real.label, df_pred.label)
         self.results[ep, bs, lr, seed] = accuracy, percent_legal
+
         result_to_df = {'dataset': self.data_args.trained_on[self.train_idx],
                         'epoch': ep, 'batch_size': bs, 'learning_rate': lr,
                         'seed': seed, 'accuracy': accuracy}
