@@ -545,7 +545,7 @@ class T5_Trainer:
         df_real = df_real.iloc[list(range(max_predict_samples))]
         df_pred['t5_sentence'] = df_real['t5_sentence']
         df_pred['id'] = df_real['id']
-        df_real['true_label'] = df_real['label']
+        df_pred['true_label'] = df_real['label']
         cols = ['id', 't5_sentence', 'target', 'label', 'true_label', 'original', 'edited']
         df_pred = df_pred[cols]
 
