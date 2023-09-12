@@ -543,14 +543,18 @@ class T5_Trainer:
         )
 
         df_real = df_real.iloc[list(range(max_predict_samples))]
+        print(f'df_real = {df_real}')
         df_pred['t5_sentence'] = df_real['t5_sentence']
         df_pred['id'] = df_real['id']
         df_pred['true_label'] = df_real['label']
         cols = ['id', 't5_sentence', 'target', 'label', 'true_label', 'original', 'edited']
         df_pred = df_pred[cols]
+        print(f'df_pred = {df_pred}')
 
         if len(df_pred[df_pred.label == -1]) > 0:
             illegal_indices = df_pred[df_pred.label == -1].index
+            print(f'there are {len(illegal_indices)} illegal indices in {self.data_args.trained_on[self.train_idx]}'
+                  f' predictions on {predict_dataset}')
             df_pred = df_pred.drop(labels=illegal_indices, axis=0)
             df_real = df_real.drop(labels=illegal_indices, axis=0)
 
