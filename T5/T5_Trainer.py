@@ -551,12 +551,19 @@ class T5_Trainer:
         df_pred = df_pred[cols]
         print(f'df_pred = {df_pred}')
 
+        # save predictions (with illegals)
+        os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
+        output_prediction_file = os.path.join(
+            self.training_args.output_dir, 'predictions',
+            "{dataset}_preds.csv".format(dataset=predict_dataset))
+        df_pred.to_csv(output_prediction_file, index=False)
+
         if len(df_pred[df_pred.label == -1]) > 0:
             illegal_indices = df_pred[df_pred.label == -1].index
             print(f'there are {len(illegal_indices)} illegal indices in {self.data_args.trained_on[self.train_idx]}'
                   f' predictions on {predict_dataset}')
-            df_pred = df_pred.drop(labels=illegal_indices, axis=0)
-            df_real = df_real.drop(labels=illegal_indices, axis=0)
+            df_pred_legal = df_pred.drop(labels=illegal_indices, axis=0)
+            df_real_legal = df_real.drop(labels=illegal_indices, axis=0)
 
         accuracy = float("%.4f" % accuracy_score(df_real.label, df_pred.label))
         recall = float("%.4f" % recall_score(df_real.label, df_pred.label))
@@ -570,12 +577,6 @@ class T5_Trainer:
                                 'accuracy': accuracy, 'recall': recall, 'precision': precision}
 
         self.final_results_df = self.final_results_df.append([row_to_final_results])
-
-        os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
-        output_prediction_file = os.path.join(
-            self.training_args.output_dir, 'predictions',
-            "{dataset}_preds.csv".format(dataset=predict_dataset))
-        df_pred.to_csv(output_prediction_file, index=False)
 
     # TODO edit this function and do it in a good way! its just cause i dont feel comfortable
     def compute_performance(self, ep, bs, lr, seed):
