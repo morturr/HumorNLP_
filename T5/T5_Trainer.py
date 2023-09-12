@@ -618,10 +618,10 @@ class T5_Trainer:
 
     def save_results(self):
         time = datetime.now()
-        results_file_path = '../Data/output/results/{model_name}_on_{dataset}_{date}_{hour}_{minute}.txt'.format(
+        results_file_path = '{run_dir}/{model_name}_on_{dataset}_{hour}_{minute}.txt'.format(
             model_name=self.model_args.model_name_or_path,
             dataset=self.data_args.trained_on[self.train_idx],
-            date=time.date(),
+            run_dir=self.run_dir_name,
             hour=time.hour, minute=time.minute
         )
 
