@@ -545,13 +545,11 @@ class T5_Trainer:
         )
 
         df_real = df_real.iloc[list(range(max_predict_samples))]
-        print(f'df_real = {df_real}')
         df_pred['t5_sentence'] = df_real['t5_sentence']
         df_pred['id'] = df_real['id']
         df_pred['true_label'] = df_real['label']
         cols = ['id', 't5_sentence', 'target', 'label', 'true_label', 'original', 'edited']
         df_pred = df_pred[cols]
-        print(f'df_pred = {df_pred}')
 
         # save predictions (with illegals)
         os.makedirs(f'{self.training_args.output_dir}/predictions', exist_ok=True)
@@ -577,6 +575,8 @@ class T5_Trainer:
                                 'learning_rate': lr, 'seed': seed,
                                 'predict_on': predict_dataset,
                                 'accuracy': accuracy, 'recall': recall, 'precision': precision}
+
+        print(row_to_final_results)
 
         self.final_results_df = self.final_results_df.append([row_to_final_results])
 
