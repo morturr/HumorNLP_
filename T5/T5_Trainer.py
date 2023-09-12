@@ -27,7 +27,7 @@ from transformers.utils import is_offline_mode
 import sys
 
 sys.path.append('../')
-from Utils.utils import DataTrainingArguments, ModelArguments
+from Utils.utils import DataTrainingArguments, ModelArguments, print_cur_time
 
 logger = logging.getLogger(__name__)
 wandb.init(project='HumorNLP')
@@ -54,6 +54,7 @@ class T5_Trainer:
         self.train_datasets, self.eval_datasets, self.predict_datasets = None, None, None
         self.train_idx = -1
         self.results = {}
+        self.results_df = None
 
         self.parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
         self.model_args, self.data_args, self.training_args = self.parser.parse_args_into_dataclasses()
@@ -66,9 +67,10 @@ class T5_Trainer:
         )
 
     def pipeline(self):
+        print_cur_time('STARTING PIPELINE')
         set_seed(self.training_args.seed)
         self.load_files()
-        self.config_model()
+        self.config_and_tokenizer()
         self.set_data_attr()
         self.preprocess_datasets()
         self.train_and_predict()
@@ -98,11 +100,11 @@ class T5_Trainer:
             if self.data_args.train_path_template is not None:
                 for dataset in self.data_args.trained_on:
                     curr_train_path = self.data_args.train_path_template.format(dataset=dataset,
-                                                                               split_type=self.data_args.split_type,
-                                                                               split_name='train')
+                                                                                split_type=self.data_args.split_type,
+                                                                                split_name='train')
                     curr_val_path = self.data_args.train_path_template.format(dataset=dataset,
-                                                                             split_type=self.data_args.split_type,
-                                                                             split_name='val')
+                                                                              split_type=self.data_args.split_type,
+                                                                              split_name='val')
                     data_files[f'{dataset}_train'] = curr_train_path
                     data_files[f'{dataset}_validation'] = curr_val_path
                 extension = self.data_args.train_path_template.split(".")[-1]
@@ -110,13 +112,16 @@ class T5_Trainer:
                 data_files["test"] = self.data_args.test_file
                 extension = self.data_args.test_file.split(".")[-1]
             if self.data_args.datasets_to_predict is not None and \
-                self.data_args.test_path_template is not None:
+                    self.data_args.test_path_template is not None:
                 extension = self.data_args.test_path_template.split(".")[-1]
                 for dataset in self.data_args.datasets_to_predict:
                     curr_predict_path = self.data_args.test_path_template.format(dataset=dataset,
                                                                                  split_type=self.data_args.split_type,
                                                                                  split_name='test')
                     data_files[f'{dataset}_test'] = curr_predict_path
+
+            print_cur_time('Loading datasets:')
+            print(data_files)
             self.raw_datasets = load_dataset(
                 extension,
                 data_files=data_files,
@@ -124,25 +129,18 @@ class T5_Trainer:
                 use_auth_token=True if self.model_args.use_auth_token else None,
             )
 
-    def config_model(self):
+    def config_and_tokenizer(self):
         self.config = AutoConfig.from_pretrained(
             self.model_args.config_name if self.model_args.config_name else self.model_args.model_name_or_path,
             cache_dir=self.model_args.cache_dir,
             revision=self.model_args.model_revision,
             use_auth_token=True if self.model_args.use_auth_token else None,
         )
+
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_args.tokenizer_name if self.model_args.tokenizer_name else self.model_args.model_name_or_path,
             cache_dir=self.model_args.cache_dir,
             # use_fast=model_args.use_fast_tokenizer,
-            revision=self.model_args.model_revision,
-            use_auth_token=True if self.model_args.use_auth_token else None,
-        )
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(
-            self.model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in self.model_args.model_name_or_path),
-            config=self.config,
-            cache_dir=self.model_args.cache_dir,
             revision=self.model_args.model_revision,
             use_auth_token=True if self.model_args.use_auth_token else None,
         )
@@ -164,6 +162,16 @@ class T5_Trainer:
 
         # Metric
         self.metric = evaluate.load("rouge")
+
+    def init_model(self):
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(
+            self.model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in self.model_args.model_name_or_path),
+            config=self.config,
+            cache_dir=self.model_args.cache_dir,
+            revision=self.model_args.model_revision,
+            use_auth_token=True if self.model_args.use_auth_token else None,
+        )
 
     def set_data_attr(self):
         self.prefix = self.data_args.source_prefix if self.data_args.source_prefix is not None else ""
@@ -222,6 +230,7 @@ class T5_Trainer:
         if self.training_args.do_train:
             train_dataset = self.raw_datasets["train"]
             if self.data_args.train_path_template is not None:
+                print_cur_time('Loading train datasets from train_path_template')
                 self.train_datasets = []
                 for dataset in self.data_args.trained_on:
                     self.train_datasets.append(self.raw_datasets[f'{dataset}_train'])
@@ -244,6 +253,7 @@ class T5_Trainer:
         if self.training_args.do_eval:
             eval_dataset = self.raw_datasets["validation"]
             if self.data_args.train_path_template is not None:
+                print_cur_time('Loading validation datasets from train_path_template')
                 self.eval_datasets = []
                 for dataset in self.data_args.trained_on:
                     self.eval_datasets.append(self.raw_datasets[f'{dataset}_validation'])
@@ -268,6 +278,7 @@ class T5_Trainer:
                 predict_dataset = self.raw_datasets["test"]
             if self.data_args.datasets_to_predict and \
                     self.data_args.test_path_template:
+                print_cur_time('Loading test datasets from test_path_template')
                 self.predict_datasets = []
                 for dataset in self.data_args.datasets_to_predict:
                     self.predict_datasets.append(self.raw_datasets[f'{dataset}_test'])
@@ -308,19 +319,26 @@ class T5_Trainer:
         return result
 
     def train_and_predict(self):
+        print_cur_time('STARTING TRAINING')
+
         epochs = self.data_args.epochs
         batch_sizes = self.data_args.batch_sizes
         lrs = self.data_args.learning_rates
         seeds = self.data_args.seeds
         general_output_dir = self.training_args.output_dir
 
+        self.results_df = pd.DataFrame(columns=['dataset', 'epoch', 'batch_size', 'learning_rate',
+                                                'seed', 'accuracy'])
+
         for i in range(len(self.data_args.trained_on)):
             self.train_idx = i
+            self.results = {}
             for ep in epochs:
                 for bs in batch_sizes:
                     for lr in lrs:
                         for seed in seeds:
                             self.set_run_details(ep, bs, lr, seed, general_output_dir)
+                            self.init_model()
                             self.train()
                             self.eval()
                             self.predict()
@@ -329,6 +347,12 @@ class T5_Trainer:
 
             self.save_results()
 
+        time = datetime.now()
+        results_df_file_path = '../Data/output/results/models_accuracy_{date}_{hour}_{minute}.csv'.format(
+            date=time.date(),
+            hour=time.hour, minute=time.minute
+        )
+        self.results_df.to_csv(results_df_file_path, index=False)
 
     def set_run_details(self, ep, bs, lr, seed, general_output_dir):
         self.training_args.num_train_epochs = ep
@@ -366,12 +390,15 @@ class T5_Trainer:
 
         # Training
         if self.training_args.do_train:
+            print_cur_time(f'START TRAIN ON {self.training_args.run_name}')
+
             checkpoint = None
             if self.training_args.resume_from_checkpoint is not None:
                 checkpoint = self.training_args.resume_from_checkpoint
             # elif last_checkpoint is not None:
             #     checkpoint = last_checkpoint
             train_result = self.trainer.train(resume_from_checkpoint=checkpoint)
+
             if self.model_args.save_model:
                 self.trainer.save_model()  # Saves the tokenizer too for easy upload
 
@@ -388,10 +415,14 @@ class T5_Trainer:
             if self.model_args.save_state:
                 self.trainer.save_state()
 
+            print_cur_time(f'END TRAIN ON {self.training_args.run_name}')
+
     def eval(self):
         # Evaluation
         if self.training_args.do_eval:
             logger.info("*** Evaluate ***")
+            print_cur_time(f'START EVAL ON {self.training_args.run_name}')
+
             if isinstance(self.eval_datasets[self.train_idx], dict):
                 metrics = {}
                 for eval_ds_name, eval_ds in self.eval_datasets[self.train_idx].items():
@@ -408,11 +439,16 @@ class T5_Trainer:
             if self.model_args.save_metrics:
                 self.trainer.save_metrics("eval", metrics)
 
+            print_cur_time(f'END EVAL ON {self.training_args.run_name}')
+
     def predict(self):
         # Predict
         if self.training_args.do_predict:
             logger.info("*** Predict ***")
+            print_cur_time(f'START PREDICT OF {self.training_args.run_name}')
+
             for i in range(len(self.predict_datasets)):
+                print_cur_time(f'START PREDICT ON {self.data_args.datasets_to_predict[i]}')
                 predict_results = self.trainer.predict(self.predict_datasets[i], metric_key_prefix="predict")
                 metrics = predict_results.metrics
                 max_predict_samples = (
@@ -445,6 +481,10 @@ class T5_Trainer:
 
                         self.save_predictions(predictions, self.data_args.datasets_to_predict[i])
 
+                print_cur_time(f'END PREDICT ON {self.data_args.datasets_to_predict[i]}')
+
+            print_cur_time(f'END PREDICT OF {self.training_args.run_name}')
+
     def save_predictions(self, predictions, predict_dataset):
         def edit_row(row):
             if row['original'] not in ['funny', 'not funny']:
@@ -473,9 +513,13 @@ class T5_Trainer:
         df_pred = df
 
         # df_real = pd.read_csv(f'../Data/humor_datasets/{predict_dataset}/{self.data_args.split_type}/test.csv')
-        df_real = pd.read_csv(self.data_args.test_path_template.format(
+
+        df_real_path = self.data_args.test_path_template.format(
             dataset=predict_dataset, split_type=self.data_args.split_type, split_name='test'
-        ))
+        )
+        print_cur_time(f'PREDICT file path  {df_real_path}')
+
+        df_real = pd.read_csv(df_real_path)
         max_predict_samples = (
             min(self.data_args.max_predict_samples, len(df_real))
             if self.data_args.max_predict_samples is not None else
@@ -496,11 +540,17 @@ class T5_Trainer:
 
     # TODO edit this function and do it in a good way! its just cause i dont feel comfortable
     def compute_performance(self, ep, bs, lr, seed):
+        print_cur_time(f'START COMPUTE OF {self.training_args.run_name}')
         dataset_name = self.data_args.compute_on[self.train_idx]
+        print_cur_time(f'COMPUTE dataset {dataset_name}')
+
         # df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
-        df_real = pd.read_csv(self.data_args.test_path_template.format(
+        df_real_path = self.data_args.test_path_template.format(
             dataset=dataset_name, split_type=self.data_args.split_type, split_name='test'
-        ))
+        )
+        print_cur_time(f'COMPUTE file path  {df_real_path}')
+
+        df_real = pd.read_csv(df_real_path)
         prediction_file = os.path.join(
             self.training_args.output_dir, 'predictions',
             "{dataset}_preds.csv".format(dataset=dataset_name))
@@ -516,7 +566,14 @@ class T5_Trainer:
             legal_count = len(df_pred)
 
         percent_legal = (legal_count / total_count) * 100
-        self.results[ep, bs, lr, seed] = accuracy_score(df_real.label, df_pred.label), percent_legal
+        accuracy = accuracy_score(df_real.label, df_pred.label)
+        self.results[ep, bs, lr, seed] = accuracy, percent_legal
+        result_to_df = {'dataset': self.data_args.trained_on[self.train_idx],
+                        'epoch': ep, 'batch_size': bs, 'learning_rate': lr,
+                        'seed': seed, 'accuracy': accuracy}
+        self.results_df = self.results_df.append([result_to_df], ignore_index=True)
+
+        print_cur_time(f'END COMPUTE OF {self.training_args.run_name}')
 
     def save_results(self):
         time = datetime.now()

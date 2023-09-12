@@ -74,7 +74,7 @@ def my_parse_args():
 
 
 def print_cur_time(status):
-    """ this function print the current time to the stdout """
+    """ this function prints the current time to the stdout """
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
-    print(status + " Current Time = " + current_time)
+    print(f'~~ {status} ~~' + " Time = " + current_time)
