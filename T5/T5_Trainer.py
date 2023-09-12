@@ -364,12 +364,12 @@ class T5_Trainer:
                             self.eval()
                             self.predict(ep, bs, lr, seed)
                             self.compute_performance(ep, bs, lr, seed)
+
+                            self.results_df.to_csv(self.run_dir_name + 'models_accuracy.csv', index=False)
+                            self.final_results_df.to_csv(self.run_dir_name + 'models_performance_all.csv', index=False)
                             # wandb.finish()
 
             self.save_results()
-
-        self.results_df.to_csv(self.run_dir_name + 'models_accuracy.csv', index=False)
-        self.final_results_df.to_csv(self.run_dir_name + 'models_performance_all.csv', index=False)
 
     def set_run_details(self, ep, bs, lr, seed, general_output_dir):
         self.training_args.num_train_epochs = ep
@@ -631,9 +631,6 @@ class T5_Trainer:
             for k, v in self.results.items():
                 f.write(f'ep: {k[0]}, bs: {k[1]}, lr: {k[2]}, seed: {k[3]}\n')
                 f.write(f'accuracy = {v[0]} on {v[1]}% legal \n')
-
-        self.results_df.to_csv(self.run_dir_name + 'models_accuracy.csv', index=False)
-        self.final_results_df.to_csv(self.run_dir_name + 'models_performance_all.csv', index=False)
 
     @staticmethod
     def postprocess_text(preds, labels):
