@@ -345,9 +345,14 @@ class BertTrainer:
                 # df_real = pd.read_csv(
                 #     f'../Data/humor_datasets/{self.data_args.datasets_to_predict[i]}/{self.data_args.split_type}/test.csv')
 
-                df_real_path = self.data_args.test_path_template.format(
-                    dataset=self.data_args.datasets_to_predict[i], split_type=self.data_args.split_type, split_name='test'
-                )
+                if self.data_args.test_path_template:
+                    df_real_path = self.data_args.test_path_template.format(
+                        dataset=self.data_args.datasets_to_predict[i], split_type=self.data_args.split_type, split_name='test'
+                    )
+
+                else:
+                    df_real_path = self.data_args.test_file
+
                 print_cur_time(f'PREDICT file path  {df_real_path}')
 
                 df_real = pd.read_csv(df_real_path)
@@ -363,7 +368,7 @@ class BertTrainer:
                 df_pred = pd.DataFrame()
                 df_pred['bert_sentence'] = df_real['bert_sentence']
                 df_pred['id'] = df_real['id']
-                df_pred['label'] = int(df['label'].apply(lambda s: int(s[-1])))
+                df_pred['label'] = df['label'].apply(lambda s: int(s[-1]))
                 df_pred['true_label'] = df_real['label']
 
                 cols = ['id', 'bert_sentence', 'label', 'true_label']
@@ -399,9 +404,13 @@ class BertTrainer:
         dataset_name = self.data_args.compute_on[self.train_idx]
         print_cur_time(f'COMPUTE dataset {dataset_name}')
         # df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
-        df_real_path = self.data_args.test_path_template.format(
-            dataset=dataset_name, split_type=self.data_args.split_type, split_name='test'
-        )
+        if self.data_args.test_path_template:
+            df_real_path = self.data_args.test_path_template.format(
+                dataset=self.data_args.datasets_to_predict[i], split_type=self.data_args.split_type, split_name='test'
+            )
+
+        else:
+            df_real_path = self.data_args.test_file
         print_cur_time(f'COMPUTE file path  {df_real_path}')
         df_real = pd.read_csv(df_real_path)
 

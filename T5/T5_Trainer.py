@@ -532,9 +532,14 @@ class T5_Trainer:
 
         # df_real = pd.read_csv(f'../Data/humor_datasets/{predict_dataset}/{self.data_args.split_type}/test.csv')
 
-        df_real_path = self.data_args.test_path_template.format(
-            dataset=predict_dataset, split_type=self.data_args.split_type, split_name='test'
-        )
+        if self.data_args.test_path_template:
+            df_real_path = self.data_args.test_path_template.format(
+                dataset=self.data_args.datasets_to_predict[i], split_type=self.data_args.split_type, split_name='test'
+            )
+
+        else:
+            df_real_path = self.data_args.test_file
+
         print_cur_time(f'PREDICT file path  {df_real_path}')
 
         df_real = pd.read_csv(df_real_path)
@@ -587,9 +592,14 @@ class T5_Trainer:
         print_cur_time(f'COMPUTE dataset {dataset_name}')
 
         # df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
-        df_real_path = self.data_args.test_path_template.format(
-            dataset=dataset_name, split_type=self.data_args.split_type, split_name='test'
-        )
+        if self.data_args.test_path_template:
+            df_real_path = self.data_args.test_path_template.format(
+                dataset=self.data_args.datasets_to_predict[i], split_type=self.data_args.split_type, split_name='test'
+            )
+
+        else:
+            df_real_path = self.data_args.test_file
+
         print_cur_time(f'COMPUTE file path  {df_real_path}')
 
         df_real = pd.read_csv(df_real_path)
