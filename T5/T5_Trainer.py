@@ -594,7 +594,7 @@ class T5_Trainer:
         # df_real = pd.read_csv(f'../Data/humor_datasets/{dataset_name}/{self.data_args.split_type}/test.csv')
         if self.data_args.test_path_template:
             df_real_path = self.data_args.test_path_template.format(
-                dataset=self.data_args.datasets_to_predict[i], split_type=self.data_args.split_type, split_name='test'
+                dataset=dataset_name, split_type=self.data_args.split_type, split_name='test'
             )
 
         else:
