@@ -363,7 +363,7 @@ class BertTrainer:
                 df_pred = pd.DataFrame()
                 df_pred['bert_sentence'] = df_real['bert_sentence']
                 df_pred['id'] = df_real['id']
-                df_pred['label'] = df['label'].apply(lambda s: s[-1])
+                df_pred['label'] = int(df['label'].apply(lambda s: s[-1]))
                 df_pred['true_label'] = df_real['label']
 
                 cols = ['id', 'bert_sentence', 'label', 'true_label']
