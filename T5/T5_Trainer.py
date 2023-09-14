@@ -534,7 +534,7 @@ class T5_Trainer:
 
         if self.data_args.test_path_template:
             df_real_path = self.data_args.test_path_template.format(
-                dataset=self.data_args.datasets_to_predict[i], split_type=self.data_args.split_type, split_name='test'
+                dataset=predict_dataset, split_type=self.data_args.split_type, split_name='test'
             )
 
         else:
