@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 from datasets import DatasetDict, Dataset
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from itertools import combinations
 
 
@@ -307,7 +307,6 @@ class DataPreprocessing:
 
             return min_val_size
 
-
         datasets = ['amazon', 'headlines', 'igg', 'twss']
         data_path = './humor_datasets'
         split_type = 'with_val_fixed_train'
@@ -334,8 +333,8 @@ class DataPreprocessing:
             merged_df.to_csv(merged_path + f'{split_name}.csv', index=False)
 
     @staticmethod
-    def create_kfold_cv_data():
-        datasets = ['headlines']
+    def balance_all_datasets():
+        datasets = ['amazon', 'headlines', 'igg', 'twss']
         output_path = './humor_datasets/{dataset}/kfold_cv/'
         input_path = './humor_datasets/{dataset}/data.csv'
 
@@ -344,7 +343,43 @@ class DataPreprocessing:
             balanced_df = DataPreprocessing.balance_dataframe(df)
             curr_output_path = output_path.format(dataset=dataset)
             os.makedirs(curr_output_path, exist_ok=True)
-            balanced_df.to_csv(curr_output_path + 'data.csv', index=False)
+            balanced_df.to_csv(curr_output_path + 'balanced_data.csv', index=False)
+
+    @staticmethod
+    def create_kfold_cv_data():
+        def get_train_size():
+            # compute fixed train size by igg train size
+            igg_df = pd.read_csv(kfold_path.format(dataset='igg') + 'balanced_data.csv')
+            splits = kfold.split(igg_df, igg_df['label'])
+            for train, test in splits:
+                fixed_train_size = len(train)
+                if len(train) % 2 == 0:
+                    break
+
+            return fixed_train_size
+
+        datasets = ['amazon', 'headlines', 'igg', 'twss']
+        kfold_path = './humor_datasets/{dataset}/kfold_cv/'
+        kfold = StratifiedKFold(n_splits=4, shuffle=True, random_state=0)
+        fixed_train_size = get_train_size()
+
+        for dataset in datasets:
+            df = pd.read_csv(kfold_path.format(dataset=dataset) + 'balanced_data.csv')
+            for i, indices in enumerate(kfold.split(df, df['label'])):
+                train_idxs, test_idxs = indices[0], indices[1]
+                df_train = df.iloc[train_idxs]
+                df_test = df.iloc[test_idxs]
+                df_label_1 = df_train[df_train['label'] == 1].sample(n=int(fixed_train_size / 2), random_state=0)
+                df_label_0 = df_train[df_train['label'] == 0].sample(n=int(fixed_train_size / 2), random_state=0)
+                df_train = df_label_1.append(df_label_0, ignore_index=True)
+                df_train = df_train.sample(frac=1, random_state=0)
+                df_test, df_val = train_test_split(df_test, test_size=0.5, shuffle=True, random_state=0)
+                curr_path = kfold_path.format(dataset=dataset) + f'fold_{i}/'
+
+                os.makedirs(curr_path, exist_ok=True)
+                df_train.to_csv(curr_path + 'train.csv', index=False)
+                df_test.to_csv(curr_path + 'test.csv', index=False)
+                df_val.to_csv(curr_path + 'val.csv', index=False)
 
 
 if __name__ == '__main__':
@@ -360,5 +395,6 @@ if __name__ == '__main__':
     ## check headlines creation
     # DataPreprocessing.preprocess_headlines()
     # DataPreprocessing.create_fixed_size_train()
+    # DataPreprocessing.balance_all_datasets()
     DataPreprocessing.create_kfold_cv_data()
 
