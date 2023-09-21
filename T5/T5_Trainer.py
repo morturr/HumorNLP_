@@ -50,6 +50,8 @@ class T5_Trainer(HumorTrainer):
         self.data_collator = None
         self.target_column = None
 
+        HumorTrainer.__init__(self)
+
     def config_and_tokenizer(self):
         self.config = AutoConfig.from_pretrained(
             self.model_args.config_name if self.model_args.config_name else self.model_args.model_name_or_path,

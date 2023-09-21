@@ -33,6 +33,8 @@ class BertTrainer(HumorTrainer):
         self.classifier = None
         self.label_column = None
 
+        HumorTrainer.__init__(self)
+
     def config_and_tokenizer(self):
         self.config = BertConfig.from_pretrained(self.model_args.model_name_or_path)
         self.tokenizer = BertTokenizer.from_pretrained(self.model_args.model_name_or_path)
