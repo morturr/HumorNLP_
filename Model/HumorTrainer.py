@@ -193,7 +193,7 @@ class HumorTrainer(ABC):
                     self.eval_datasets[i] = self.eval_datasets[i].map(
                         self.preprocess_function,
                         batched=True,
-                        remove_columns=self.eval_datasets_datasets[i].column_names if remove_columns else None)
+                        remove_columns=self.eval_datasets[i].column_names if remove_columns else None)
 
         if self.training_args.do_predict:
             if self.data_args.test_file:
