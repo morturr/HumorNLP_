@@ -27,7 +27,7 @@ from transformers.utils import is_offline_mode
 import sys
 
 sys.path.append('../')
-from Utils.utils import DataTrainingArguments, ModelArguments, print_cur_time
+from Utils.utils import print_cur_time
 from Model.HumorTrainer import HumorTrainer
 
 logger = logging.getLogger(__name__)

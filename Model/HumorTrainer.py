@@ -28,7 +28,6 @@ import sys
 
 sys.path.append('../')
 from Utils.utils import DataTrainingArguments, ModelArguments, print_cur_time
-from Model.HumorTrainer import HumorTrainer
 
 logger = logging.getLogger(__name__)
 from abc import ABC, abstractmethod

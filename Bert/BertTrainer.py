@@ -21,7 +21,7 @@ from sklearn.metrics import accuracy_score, recall_score, precision_score
 
 import sys
 sys.path.append('../')
-from Utils.utils import DataTrainingArguments, ModelArguments, DEVICE, print_cur_time
+from Utils.utils import DEVICE, print_cur_time
 from Model.HumorTrainer import HumorTrainer
 
 logger = logging.getLogger(__name__)
