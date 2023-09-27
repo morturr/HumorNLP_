@@ -67,7 +67,71 @@ class BertTrainer(HumorTrainer):
         return result
 
     def preprocess_datasets(self):
-        HumorTrainer.preprocess_datasets(self, remove_columns=False)
+        # HumorTrainer.preprocess_datasets(self, remove_columns=False)
+
+        remove_columns = False
+
+        if self.training_args.do_train:
+            if self.data_args.train_file:
+                train_dataset = self.raw_datasets["train"]
+            if self.data_args.train_path_template is not None:
+                print_cur_time('Loading train datasets from train_path_template')
+                self.train_datasets = []
+                for dataset in self.data_args.trained_on:
+                    self.train_datasets.append(self.raw_datasets[f'{dataset}_train'])
+            else:
+                self.train_datasets = [train_dataset]
+            for i in range(len(self.train_datasets)):
+                if self.data_args.max_train_samples is not None:
+                    max_train_samples = min(len(self.train_datasets[i]), self.data_args.max_train_samples)
+                    self.train_datasets[i] = self.train_datasets[i].select(range(max_train_samples))
+                with self.training_args.main_process_first(desc="train dataset map pre-processing"):
+                    self.train_datasets[i] = self.train_datasets[i].map(
+                        self.preprocess_function,
+                        batched=True,
+                        remove_columns=self.train_datasets[i].column_names if remove_columns else None)
+
+        if self.training_args.do_eval:
+            if self.data_args.validation_file:
+                eval_dataset = self.raw_datasets["validation"]
+            if self.data_args.train_path_template is not None:
+                print_cur_time('Loading validation datasets from train_path_template')
+                self.eval_datasets = []
+                for dataset in self.data_args.trained_on:
+                    self.eval_datasets.append(self.raw_datasets[f'{dataset}_validation'])
+            else:
+                self.eval_datasets = [eval_dataset]
+            for i in range(len(self.eval_datasets)):
+                if self.data_args.max_eval_samples is not None:
+                    max_eval_samples = min(len(self.eval_datasets[i]), self.data_args.max_eval_samples)
+                    self.eval_datasets[i] = self.eval_datasets[i].select(range(max_eval_samples))
+                with self.training_args.main_process_first(desc="validation dataset map pre-processing"):
+                    self.eval_datasets[i] = self.eval_datasets[i].map(
+                        self.preprocess_function,
+                        batched=True,
+                        remove_columns=self.eval_datasets[i].column_names if remove_columns else None)
+
+        if self.training_args.do_predict:
+            if self.data_args.test_file:
+                predict_dataset = self.raw_datasets["test"]
+            if self.data_args.datasets_to_predict and \
+                    self.data_args.test_path_template is not None:
+                print_cur_time('Loading test datasets from test_path_template')
+                self.predict_datasets = []
+                for dataset in self.data_args.datasets_to_predict:
+                    self.predict_datasets.append(self.raw_datasets[f'{dataset}_test'])
+            else:
+                self.predict_datasets = [predict_dataset]
+
+            for i in range(len(self.predict_datasets)):
+                if self.data_args.max_predict_samples is not None:
+                    max_predict_samples = min(len(self.predict_datasets[i]), self.data_args.max_predict_samples)
+                    self.predict_datasets[i] = self.predict_datasets[i].select(range(max_predict_samples))
+                with self.training_args.main_process_first(desc="prediction dataset map pre-processing"):
+                    self.predict_datasets[i] = self.predict_datasets[i].map(
+                        self.preprocess_function,
+                        batched=True,
+                        remove_columns=self.predict_datasets[i].column_names if remove_columns else None)
 
     def train(self):
         self.trainer = Trainer(
