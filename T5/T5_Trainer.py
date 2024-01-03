@@ -150,6 +150,43 @@ class T5_Trainer(HumorTrainer):
     def preprocess_datasets(self):
         # HumorTrainer.preprocess_datasets(self, remove_columns=True)
 
+        def preprocess_wrapper(text_column, target_column, prefix,
+                               tokenizer, max_source_length, padding,
+                               max_target_length, ignore_pad_token_for_loss):
+            def my_inner_preprocess_function(examples):
+                # remove pairs where at least one record is None
+
+                inputs, targets = [], []
+                for i in range(len(examples[text_column])):
+                    if examples[text_column][i] and examples[target_column][i]:
+                        inputs.append(examples[text_column][i])
+                        targets.append(examples[target_column][i])
+
+                inputs = [prefix + inp for inp in inputs]
+                model_inputs = tokenizer(inputs, max_length=max_source_length, padding=padding,
+                                              truncation=True)
+
+                # Tokenize targets with the `text_target` keyword argument
+                labels = tokenizer(text_target=targets, max_length=max_target_length, padding=padding,
+                                        truncation=True)
+
+                # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
+                # padding in the loss.
+                if padding == "max_length" and ignore_pad_token_for_loss:
+                    labels["input_ids"] = [
+                        [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in
+                        labels["input_ids"]
+                    ]
+
+                model_inputs["labels"] = labels["input_ids"]
+                return model_inputs
+
+            return my_inner_preprocess_function
+
+        preprocess_function = preprocess_wrapper(self.text_column, self.target_column, self.prefix,
+                               self.tokenizer, self.data_args.max_source_length, self.padding,
+                               self.max_target_length, self.data_args.ignore_pad_token_for_loss)
+
         remove_columns = True
 
         if self.training_args.do_train:
@@ -168,7 +205,7 @@ class T5_Trainer(HumorTrainer):
                     self.train_datasets[i] = self.train_datasets[i].select(range(max_train_samples))
                 with self.training_args.main_process_first(desc="train dataset map pre-processing"):
                     self.train_datasets[i] = self.train_datasets[i].map(
-                        self.preprocess_function,
+                        preprocess_function,
                         batched=True,
                         remove_columns=self.train_datasets[i].column_names if remove_columns else None)
 
@@ -188,7 +225,7 @@ class T5_Trainer(HumorTrainer):
                     self.eval_datasets[i] = self.eval_datasets[i].select(range(max_eval_samples))
                 with self.training_args.main_process_first(desc="validation dataset map pre-processing"):
                     self.eval_datasets[i] = self.eval_datasets[i].map(
-                        self.preprocess_function,
+                        preprocess_function,
                         batched=True,
                         remove_columns=self.eval_datasets[i].column_names if remove_columns else None)
 
@@ -210,7 +247,7 @@ class T5_Trainer(HumorTrainer):
                     self.predict_datasets[i] = self.predict_datasets[i].select(range(max_predict_samples))
                 with self.training_args.main_process_first(desc="prediction dataset map pre-processing"):
                     self.predict_datasets[i] = self.predict_datasets[i].map(
-                        self.preprocess_function,
+                        preprocess_function,
                         batched=True,
                         remove_columns=self.predict_datasets[i].column_names if remove_columns else None)
 

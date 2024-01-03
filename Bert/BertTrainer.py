@@ -69,6 +69,15 @@ class BertTrainer(HumorTrainer):
     def preprocess_datasets(self):
         # HumorTrainer.preprocess_datasets(self, remove_columns=False)
 
+        def preprocess_wrapper(text_column, tokenizer):
+            def my_inner_preprocess_function(data):
+                result = tokenizer(data[text_column], truncation=True, max_length=512)
+                return result
+
+            return my_inner_preprocess_function
+
+        preprocess_function = preprocess_wrapper(self.text_column, self.tokenizer)
+
         remove_columns = False
 
         if self.training_args.do_train:
@@ -87,7 +96,7 @@ class BertTrainer(HumorTrainer):
                     self.train_datasets[i] = self.train_datasets[i].select(range(max_train_samples))
                 with self.training_args.main_process_first(desc="train dataset map pre-processing"):
                     self.train_datasets[i] = self.train_datasets[i].map(
-                        self.preprocess_function,
+                        preprocess_function,
                         batched=True,
                         remove_columns=self.train_datasets[i].column_names if remove_columns else None)
 
@@ -107,7 +116,7 @@ class BertTrainer(HumorTrainer):
                     self.eval_datasets[i] = self.eval_datasets[i].select(range(max_eval_samples))
                 with self.training_args.main_process_first(desc="validation dataset map pre-processing"):
                     self.eval_datasets[i] = self.eval_datasets[i].map(
-                        self.preprocess_function,
+                        preprocess_function,
                         batched=True,
                         remove_columns=self.eval_datasets[i].column_names if remove_columns else None)
 
@@ -129,7 +138,7 @@ class BertTrainer(HumorTrainer):
                     self.predict_datasets[i] = self.predict_datasets[i].select(range(max_predict_samples))
                 with self.training_args.main_process_first(desc="prediction dataset map pre-processing"):
                     self.predict_datasets[i] = self.predict_datasets[i].map(
-                        self.preprocess_function,
+                        preprocess_function,
                         batched=True,
                         remove_columns=self.predict_datasets[i].column_names if remove_columns else None)
 
