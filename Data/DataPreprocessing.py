@@ -333,6 +333,54 @@ class DataPreprocessing:
             merged_df.to_csv(merged_path + f'{split_name}.csv', index=False)
 
     @staticmethod
+    def create_triple_datasets(split_name):
+        def get_third_balanced_train(df):
+            label_1 = df[df.label == 1]
+            label_0 = df[df.label == 0]
+            label_size = int(len(df) / 6)
+            label_1 = label_1.iloc[:label_size]
+            label_0 = label_0.iloc[:label_size]
+            new_df = label_1.append(label_0, ignore_index=True)
+            new_df = new_df.sample(frac=1, random_state=0, ignore_index=True)
+            return new_df
+
+        def get_fixed_size_val():
+            min_val_size = None
+            for dataset in datasets:
+                df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/val.csv')
+                if min_val_size is None or len(df) < min_val_size:
+                    min_val_size = len(df)
+
+            return min_val_size
+
+        datasets = ['amazon', 'headlines', 'igg', 'twss']
+        data_path = './humor_datasets'
+        split_type = 'with_val_fixed_train'
+        output_path = data_path + '/tripled_datasets/'
+        triple_dataset = list(combinations(datasets, 3))
+        dfs = {}
+
+        for dataset in datasets:
+            df = pd.read_csv(f'{data_path}/{dataset}/{split_type}/{split_name}.csv')
+            if split_name == 'train':
+                dfs[dataset] = get_third_balanced_train(df)
+            elif split_name == 'val':
+                size = get_fixed_size_val()
+                dfs[dataset] = df.iloc[:size]
+
+        for triple in triple_dataset:
+            dataset1, dataset2, dataset3 = triple[0], triple[1], triple[2]
+            df1 = dfs[dataset1]
+            df2 = dfs[dataset2]
+            df3 = dfs[dataset3]
+            merged_df = df1.append([df2, df3], ignore_index=True)
+
+            merged_df = merged_df.sample(frac=1, random_state=0, ignore_index=False)
+            merged_path = output_path + f'{dataset1}_{dataset2}_{dataset3}/{split_type}/'
+            os.makedirs(merged_path, exist_ok=True)
+            merged_df.to_csv(merged_path + f'{split_name}.csv', index=False)
+
+    @staticmethod
     def balance_all_datasets():
         datasets = ['amazon', 'headlines', 'igg', 'twss']
         output_path = './humor_datasets/{dataset}/kfold_cv/'
@@ -387,7 +435,7 @@ if __name__ == '__main__':
     # DataPreprocessing.preprocess_datasets()
     # DataPreprocessing.create_fixed_size_train()
     # split_name = 'train'
-    # split_name = 'val'
+    split_name = 'val'
     # DataPreprocessing.create_pair_datasets(split_name)
     # split_name = 'train'
     # DataPreprocessing.create_pair_datasets(split_name)
@@ -396,5 +444,5 @@ if __name__ == '__main__':
     # DataPreprocessing.preprocess_headlines()
     # DataPreprocessing.create_fixed_size_train()
     # DataPreprocessing.balance_all_datasets()
-    DataPreprocessing.create_kfold_cv_data()
-
+    # DataPreprocessing.create_kfold_cv_data()
+    DataPreprocessing.create_triple_datasets(split_name)
