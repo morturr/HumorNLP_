@@ -33,7 +33,7 @@ class DataPreprocessing:
         return 'funny' if label == 1 else 'not funny'
 
     @staticmethod
-    def balance_train(path, datasets):
+    def balance_train_of_datasets(path, datasets):
         for dataset in datasets:
             curr_path = path + dataset + '/'
             train = pd.read_csv(curr_path + 'train.csv')
