@@ -3,7 +3,8 @@ import numpy as np
 
 DATASETS = ['amazon', 'headlines', 'igg', 'twss']
 
-if __name__ == '__main__':
+
+def result_analysis():
     # processed_headlines_path = './Data/humor_datasets/headlines/with_val_fixed_train/{split}.csv'
     # original_headlines_path = './Data/original_datasets/headlines/{split}.csv'
     # processed_train_df = pd.read_csv(processed_headlines_path.format(split='train'))
@@ -79,7 +80,7 @@ if __name__ == '__main__':
     #             output_df2.to_csv(path + filename + '_summary.csv', index=False)
 
     output_path = './Data/output/results/'
-    results_filename = 'results-2024-01-03.csv'
+    results_filename = 'results-2024-01-08.csv'
     results_fullpath = output_path + results_filename
 
     results_df = pd.read_csv(results_fullpath)
@@ -95,13 +96,24 @@ if __name__ == '__main__':
     for model in models:
         for trained_dataset in trained_datasets:
             curr_df = results_df[(results_df['model'] == model) &
-                (results_df['trained_on'] == trained_dataset)]
+                                 (results_df['trained_on'] == trained_dataset)]
 
-            # check if the dataset is single/paired
-            if '_' in trained_dataset:
+            # check if curr_df is empty
+            if curr_df.empty:
+                continue
+
+            # the dataset is pair case
+            if trained_dataset.count('_') == 1:
                 ds_to_accuracy = trained_dataset[:trained_dataset.index('_')]
                 if ds_to_accuracy == 'headlines':
                     ds_to_accuracy = trained_dataset[trained_dataset.index('_') + 1:]
+            # the dataset is triple case
+            elif trained_dataset.count('_') == 2:
+                ds_to_accuracy = trained_dataset[:trained_dataset.index('_')]
+                if ds_to_accuracy == 'headlines':
+                    trimmed_name = trained_dataset[trained_dataset.index('_') + 1:]
+                    ds_to_accuracy = trimmed_name[:trimmed_name.index('_')]
+            # the dataset is single
             else:
                 ds_to_accuracy = trained_dataset
 
@@ -117,10 +129,9 @@ if __name__ == '__main__':
 
             df_with_seed = curr_df[curr_df['seed'] == best_seed]
 
-
             for performance in ['accuracy', 'recall', 'precision']:
                 row_to_df = {'performance': performance, 'model': model,
-                            'trained_on': trained_dataset, 'seed': best_seed,
+                             'trained_on': trained_dataset, 'seed': best_seed,
                              'accuracy_mean_std': mean_std_acc}
                 values = {dataset: df_with_seed[df_with_seed['predict_on'] == dataset][performance].iloc[0]
                           for dataset in DATASETS}
@@ -130,5 +141,34 @@ if __name__ == '__main__':
 
     output_df.to_csv(output_path + 'final-' + results_filename, index=False)
 
+
+def filter_reddit_dad_jokes():
+    from functools import reduce
+    QUESTION_WORDS = ['why', 'when', 'what', 'how', 'who']
+
+    def wrapper(joke):
+        def reduce_quest(acc, word):
+            print(word, joke.startswith(word))
+            return acc or joke.startswith(word)
+        return reduce_quest
+
+    def is_question_joke(joke):
+        joke = joke.lower().strip()
+        starts_with_quest_word = reduce(lambda acc, word: acc or joke.startswith(word), QUESTION_WORDS, False)
+        contains_quest_mark = '?' in joke
+
+        return starts_with_quest_word and contains_quest_mark
+
+    path = './Data/new_humor_datasets/'
+    dataset_redadj_name = 'reddit_dadjokes'
+    redadj_path = path + dataset_redadj_name + '/'
+
+    df_redadj_over_20 = pd.read_csv(redadj_path + 'reddit_dadjokes_over_20.csv')
+
+    df_redadj_questions = df_redadj_over_20[df_redadj_over_20.sentence.apply(is_question_joke)]
+
+
+if __name__ == '__main__':
+    filter_reddit_dad_jokes()
 
     pass
