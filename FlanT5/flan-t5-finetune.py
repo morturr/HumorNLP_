@@ -9,13 +9,15 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+
 from data_loader import id2label, label2id, load_dataset
 import wandb
 
 wandb.init(mode='disabled')
 
+DATASET_NAME = 'amazon'
 MODEL_ID = "google/flan-t5-small"
-REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-amazon-text-classification"
+REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification"
 
 config = AutoConfig.from_pretrained(
     MODEL_ID, num_labels=len(label2id), id2label=id2label, label2id=label2id
@@ -37,10 +39,10 @@ training_args = TrainingArguments(
     save_strategy="epoch",
     save_total_limit=2,
     load_best_model_at_end=False,
-    # push_to_hub=True,
-    # hub_strategy="every_save",
-    # hub_model_id=REPOSITORY_ID,
-    # hub_token=HfFolder.get_token(),
+    push_to_hub=True,
+    hub_strategy="every_save",
+    hub_model_id=REPOSITORY_ID,
+    hub_token=HfFolder.get_token(),
 )
 
 
