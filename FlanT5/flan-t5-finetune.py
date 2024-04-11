@@ -10,6 +10,9 @@ from transformers import (
     TrainingArguments,
 )
 from data_loader import id2label, label2id, load_dataset
+import wandb
+
+wandb.init(mode='disabled')
 
 MODEL_ID = "google/flan-t5-small"
 REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-amazon-text-classification"
@@ -26,7 +29,7 @@ training_args = TrainingArguments(
     logging_strategy="steps",
     logging_steps=100,
     # report_to="tensorboard",
-    report_to=None,
+    report_to="none",
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
     fp16=False,  # Overflows with fp16
@@ -81,9 +84,9 @@ def train() -> None:
     trainer.train()
 
     # SAVE AND EVALUATE
-    # tokenizer.save_pretrained(REPOSITORY_ID)
-    # trainer.create_model_card()
-    # trainer.push_to_hub()
+    tokenizer.save_pretrained(REPOSITORY_ID)
+    trainer.create_model_card()
+    trainer.push_to_hub()
     print(trainer.evaluate())
 
 
