@@ -16,7 +16,7 @@ import wandb
 wandb.init(mode='disabled')
 
 DATASET_NAME = 'amazon'
-MODEL_ID = "google/flan-t5-small"
+MODEL_ID = "google/flan-t5-base"
 REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification"
 
 config = AutoConfig.from_pretrained(

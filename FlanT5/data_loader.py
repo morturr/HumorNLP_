@@ -3,10 +3,9 @@ import os
 import pandas as pd
 from datasets import Dataset, DatasetDict
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))#.replace('\\', '/')
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET_NAME = 'amazon'
 
-# label2id = {"Books": 0, "Clothing & Accessories": 1, "Electronics": 2, "Household": 3}
 label2id = {"not funny": 0, "funny": 1}
 id2label = {id: label for label, id in label2id.items()}
 
@@ -14,7 +13,6 @@ id2label = {id: label for label, id in label2id.items()}
 def load_dataset(model_type: str = "AutoModelForSequenceClassification") -> DatasetDict:
     """Load dataset."""
     dataset_pandas = pd.read_csv(
-        # ROOT_DIR + "/data/ecommerce_kaggle_dataset.csv",
         ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{DATASET_NAME}/data.csv",
         # header=None,
         # names=["id", "bert_sentence", "t5_sentence", "target", "label"],
