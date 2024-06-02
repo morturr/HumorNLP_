@@ -52,7 +52,8 @@ def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_
     train_test = dataset.train_test_split(test_size=0.9, seed=42)
     kf = KFold(n_splits=5, shuffle=True, random_state=1)
 
-    return dataset['train'], kf
+    train = pd.DataFrame(train_test['train'])
+    return train, kf
 
 
 if __name__ == "__main__":

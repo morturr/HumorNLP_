@@ -10,9 +10,10 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from datasets import DatasetDict
+from datasets import DatasetDict, Dataset
 
 from data_loader import id2label, label2id, load_dataset, load_cv_dataset
+from classify_and_evaluate import evaluate_with_cv
 import wandb
 
 wandb.init(mode='disabled')
@@ -93,18 +94,22 @@ def train() -> None:
     trainer.push_to_hub()
     print(trainer.evaluate())
 
+
 def train_with_cv() -> None:
     """
     Train the model using cross validation and find the best hyperparameters.
     """
     dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
     for split in kf.split(dataset):
-        train = dataset.iloc[split[0]]
-        test = dataset.iloc[split[1]]
+        model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+
+        train = Dataset.from_pandas(dataset.iloc[split[0]])
+        test = Dataset.from_pandas(dataset.iloc[split[1]])
         data_dict = DatasetDict()
         data_dict['train'] = train
         data_dict['test'] = test
-        tokenized_datasets = dataset.map(tokenize_function, batched=True)
+        tokenized_datasets = data_dict.map(tokenize_function, batched=True)
 
         nltk.download("punkt")
 
@@ -118,9 +123,15 @@ def train_with_cv() -> None:
         # TRAIN
         trainer.train()
 
-        print(trainer.evaluate())
+        # SAVE AND EVALUATE
+        tokenizer.save_pretrained(REPOSITORY_ID)
+        trainer.create_model_card()
+        trainer.push_to_hub()
+
+        # PREDICT ON 5TH SPLIT
+        evaluate_with_cv(data_dict)
 
 
 if __name__ == "__main__":
-    train()
+    # train()
     train_with_cv()
