@@ -7,15 +7,18 @@ from sklearn.metrics import classification_report
 from tqdm.auto import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from data_loader import id2label, load_dataset
+from data_loader import id2label, load_dataset, load_cv_dataset
+from datasets import DatasetDict
 
-dataset = load_dataset("AutoModelForSequenceClassification")
 
 # Load the model and tokenizer
 MODEL_ID = "morturr/flan-t5-small-amazon-text-classification"
 
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
 model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
+
+# dataset = load_dataset("AutoModelForSequenceClassification")
+dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
@@ -83,6 +86,39 @@ def evaluate():
     progress_bar.close()
     report = classification_report(labels_list, [pair[0] for pair in predictions_list])
     print(report)
+
+
+def evaluate_with_cv():
+    for split in kf.split(dataset):
+        train = dataset.iloc[split[0]]
+        test = dataset.iloc[split[1]]
+        data_dict = DatasetDict()
+        data_dict['train'] = train
+        data_dict['test'] = test
+
+        """Evaluate the model on the test dataset."""
+        predictions_list, labels_list = [], []
+
+        batch_size = 16  # Adjust batch size based GPU capacity
+        num_batches = len(data_dict["test"]) // batch_size + (
+            0 if len(data_dict["test"]) % batch_size == 0 else 1
+        )
+        progress_bar = tqdm(total=num_batches, desc="Evaluating")
+
+        for i in range(0, len(data_dict["test"]), batch_size):
+            batch_texts = data_dict["test"]["t5_sentence"][i: i + batch_size]
+            batch_labels = data_dict["test"]["label"][i: i + batch_size]
+
+            batch_predictions = classify(batch_texts)
+
+            predictions_list.extend(batch_predictions)
+            labels_list.extend([id2label[label_id] for label_id in batch_labels])
+
+            progress_bar.update(1)
+
+        progress_bar.close()
+        report = classification_report(labels_list, [pair[0] for pair in predictions_list])
+        print(report)
 
 
 if __name__ == "__main__":

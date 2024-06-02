@@ -2,6 +2,7 @@ import nltk
 import numpy as np
 from huggingface_hub import HfFolder
 from sklearn.metrics import precision_recall_fscore_support
+from sklearn.model_selection import KFold, cross_val_score
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
@@ -9,8 +10,9 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from datasets import DatasetDict
 
-from data_loader import id2label, label2id, load_dataset
+from data_loader import id2label, label2id, load_dataset, load_cv_dataset
 import wandb
 
 wandb.init(mode='disabled')
@@ -91,6 +93,34 @@ def train() -> None:
     trainer.push_to_hub()
     print(trainer.evaluate())
 
+def train_with_cv() -> None:
+    """
+    Train the model using cross validation and find the best hyperparameters.
+    """
+    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
+    for split in kf.split(dataset):
+        train = dataset.iloc[split[0]]
+        test = dataset.iloc[split[1]]
+        data_dict = DatasetDict()
+        data_dict['train'] = train
+        data_dict['test'] = test
+        tokenized_datasets = dataset.map(tokenize_function, batched=True)
+
+        nltk.download("punkt")
+
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=tokenized_datasets["train"],
+            compute_metrics=compute_metrics,
+        )
+
+        # TRAIN
+        trainer.train()
+
+        print(trainer.evaluate())
+
 
 if __name__ == "__main__":
     train()
+    train_with_cv()
