@@ -49,7 +49,7 @@ def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_
     dataset_pandas["t5_sentence"] = dataset_pandas["t5_sentence"].astype(str)
     dataset = Dataset.from_pandas(dataset_pandas)
     # 90% train, 10% test
-    train_test = dataset.train_test_split(test_size=0.9, seed=42)
+    train_test = dataset.train_test_split(test_size=0.1, seed=42)
     kf = KFold(n_splits=5, shuffle=True, random_state=1)
 
     train = pd.DataFrame(train_test['train'])

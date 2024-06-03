@@ -75,21 +75,24 @@ class DataPreprocessing:
         return train_df, test_df
 
     @staticmethod
-    def balance_dataframe(df):
+    def balance_dataframe(df, dataset_size=None):
         df_label_1 = df[df['label'] == 1]
         df_label_0 = df[df['label'] == 0]
         larger_df = df_label_1 if len(df_label_1) > len(df_label_0) else df_label_0
         shorter_df = df_label_0 if len(df_label_1) > len(df_label_0) else df_label_1
-        labels_diff = abs(len(df_label_1) - len(df_label_0))
+
+        if dataset_size:
+            larger_df = larger_df.iloc[:dataset_size // 2]
+            shorter_df = shorter_df.iloc[:dataset_size // 2]
+
+        labels_diff = abs(len(larger_df) - len(shorter_df))
 
         if labels_diff > 0:
             larger_df = larger_df.iloc[labels_diff:]
-            new_df = larger_df.append(shorter_df)
-            new_df = new_df.sample(frac=1, random_state=0, ignore_index=True)
-            return new_df
 
-        else:
-            return df
+        new_df = larger_df.append(shorter_df)
+        new_df = new_df.sample(frac=1, random_state=0, ignore_index=True)
+        return new_df
 
 
     @staticmethod
@@ -382,16 +385,17 @@ class DataPreprocessing:
 
     @staticmethod
     def balance_all_datasets():
-        datasets = ['amazon', 'headlines', 'igg', 'twss']
-        output_path = './humor_datasets/{dataset}/kfold_cv/'
-        input_path = './humor_datasets/{dataset}/data.csv'
+        datasets = ['amazon', 'one_liners', 'dadjokes', 'headlines', 'yelp_reviews']
+        output_path = './new_humor_datasets/balanced/{dataset}/'
+        input_path = './new_humor_datasets/original/{dataset}/data.csv'
+        FIXED_DATASET_SIZE = 19000
 
         for dataset in datasets:
             df = pd.read_csv(input_path.format(dataset=dataset))
-            balanced_df = DataPreprocessing.balance_dataframe(df)
+            balanced_df = DataPreprocessing.balance_dataframe(df, FIXED_DATASET_SIZE)
             curr_output_path = output_path.format(dataset=dataset)
             os.makedirs(curr_output_path, exist_ok=True)
-            balanced_df.to_csv(curr_output_path + 'balanced_data.csv', index=False)
+            balanced_df.to_csv(curr_output_path + 'data.csv', index=False)
 
     @staticmethod
     def create_kfold_cv_data():
@@ -435,7 +439,7 @@ if __name__ == '__main__':
     # DataPreprocessing.preprocess_datasets()
     # DataPreprocessing.create_fixed_size_train()
     # split_name = 'train'
-    split_name = 'val'
+    # split_name = 'val'
     # DataPreprocessing.create_pair_datasets(split_name)
     # split_name = 'train'
     # DataPreprocessing.create_pair_datasets(split_name)
@@ -443,6 +447,6 @@ if __name__ == '__main__':
     ## check headlines creation
     # DataPreprocessing.preprocess_headlines()
     # DataPreprocessing.create_fixed_size_train()
-    # DataPreprocessing.balance_all_datasets()
+    DataPreprocessing.balance_all_datasets()
     # DataPreprocessing.create_kfold_cv_data()
-    DataPreprocessing.create_triple_datasets(split_name)
+    # DataPreprocessing.create_triple_datasets(split_name)
