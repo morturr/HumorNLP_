@@ -9,16 +9,21 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from data_loader import id2label, load_dataset, load_cv_dataset
 from datasets import DatasetDict
+import sys
 
+sys.path.append('../')
+from Utils.utils import print_cur_time
 
 # Load the model and tokenizer
-MODEL_ID = "morturr/flan-t5-small-amazon-text-classification"
+MODEL_ID = "morturr/flan-t5-base-sarcasm_headlines-text-classification"
 
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
 model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
 
-# dataset = load_dataset("AutoModelForSequenceClassification")
-dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
+DATASET_NAME = 'sarcasm_headlines'
+datasets_list = ['amazon', 'yelp', 'sarcasm_headlines']
+dataset = load_dataset("AutoModelForSequenceClassification", DATASET_NAME)
+# dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
@@ -64,28 +69,32 @@ def classify(texts_to_classify: List[str]) -> List[Tuple[str, float]]:
 
 def evaluate():
     """Evaluate the model on the test dataset."""
-    predictions_list, labels_list = [], []
+    for dataset_name in datasets_list:
+        dataset = load_dataset("AutoModelForSequenceClassification", dataset_name)
 
-    batch_size = 16  # Adjust batch size based GPU capacity
-    num_batches = len(dataset["test"]) // batch_size + (
-        0 if len(dataset["test"]) % batch_size == 0 else 1
-    )
-    progress_bar = tqdm(total=num_batches, desc="Evaluating")
+        print_cur_time(f'***** Evaluate model: {MODEL_ID} on dataset: {dataset_name} *****')
+        predictions_list, labels_list = [], []
 
-    for i in range(0, len(dataset["test"]), batch_size):
-        batch_texts = dataset["test"]["t5_sentence"][i : i + batch_size]
-        batch_labels = dataset["test"]["label"][i : i + batch_size]
+        batch_size = 16  # Adjust batch size based GPU capacity
+        num_batches = len(dataset["test"]) // batch_size + (
+            0 if len(dataset["test"]) % batch_size == 0 else 1
+        )
+        progress_bar = tqdm(total=num_batches, desc="Evaluating")
 
-        batch_predictions = classify(batch_texts)
+        for i in range(0, len(dataset["test"]), batch_size):
+            batch_texts = dataset["test"]["t5_sentence"][i: i + batch_size]
+            batch_labels = dataset["test"]["label"][i: i + batch_size]
 
-        predictions_list.extend(batch_predictions)
-        labels_list.extend([id2label[label_id] for label_id in batch_labels])
+            batch_predictions = classify(batch_texts)
 
-        progress_bar.update(1)
+            predictions_list.extend(batch_predictions)
+            labels_list.extend([id2label[label_id] for label_id in batch_labels])
 
-    progress_bar.close()
-    report = classification_report(labels_list, [pair[0] for pair in predictions_list])
-    print(report)
+            progress_bar.update(1)
+
+        progress_bar.close()
+        report = classification_report(labels_list, [pair[0] for pair in predictions_list])
+        print(report)
 
 
 def evaluate_with_cv(data_dict):
@@ -116,3 +125,4 @@ def evaluate_with_cv(data_dict):
 
 if __name__ == "__main__":
     evaluate()
+

@@ -18,7 +18,7 @@ import wandb
 
 wandb.init(mode='disabled')
 
-DATASET_NAME = 'amazon'
+DATASET_NAME = 'sarcasm_headlines'
 MODEL_ID = "google/flan-t5-base"
 REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification"
 
@@ -37,7 +37,7 @@ training_args = TrainingArguments(
     report_to="none",
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
-    fp16=False,  # Overflows with fp16
+    fp16=True,  # Overflows with fp16
     learning_rate=3e-4,
     save_strategy="epoch",
     save_total_limit=2,
@@ -72,7 +72,8 @@ def train() -> None:
     """
     Train the model and save it to the Hugging Face Hub.
     """
-    dataset = load_dataset("AutoModelForSequenceClassification")
+    print(f'***** Train model: {MODEL_ID} on dataset: {DATASET_NAME} *****')
+    dataset = load_dataset("AutoModelForSequenceClassification", DATASET_NAME)
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
     nltk.download("punkt")
@@ -133,5 +134,5 @@ def train_with_cv() -> None:
 
 
 if __name__ == "__main__":
-    # train()
-    train_with_cv()
+    train()
+    # train_with_cv()

@@ -6,17 +6,17 @@ from datasets import Dataset, DatasetDict
 from sklearn.model_selection import KFold
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATASET_NAME = 'amazon'
+# DATASET_NAME = 'yelp'
 DATASET_FIXED_SIZE = 19000
 
 label2id = {"not funny": 0, "funny": 1}
 id2label = {id: label for label, id in label2id.items()}
 
 
-def load_dataset(model_type: str = "AutoModelForSequenceClassification") -> DatasetDict:
+def load_dataset(model_type: str = "AutoModelForSequenceClassification", dataset_name='amazon') -> DatasetDict:
     """Load dataset."""
     dataset_pandas = pd.read_csv(
-        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{DATASET_NAME}/data.csv",
+        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{dataset_name}/data.csv",
         # header=None,
         # names=["id", "bert_sentence", "t5_sentence", "target", "label"],
         # names=["label", "text"],
@@ -41,9 +41,9 @@ def load_dataset(model_type: str = "AutoModelForSequenceClassification") -> Data
     return dataset
 
 
-def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_of_split=5) -> pandas.DataFrame:
+def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_of_split=5, dataset_name='amazon') -> pandas.DataFrame:
     dataset_pandas = pd.read_csv(
-        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{DATASET_NAME}/data.csv"
+        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{dataset_name}/data.csv"
     )
 
     dataset_pandas["t5_sentence"] = dataset_pandas["t5_sentence"].astype(str)
