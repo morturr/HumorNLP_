@@ -12,6 +12,13 @@ from transformers import (
 )
 from datasets import DatasetDict, Dataset
 
+from peft import (
+    LoraConfig,
+    PeftConfig,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+)
+
 from data_loader import id2label, label2id, load_dataset, load_cv_dataset
 from classify_and_evaluate import evaluate_with_cv
 import wandb
@@ -75,6 +82,18 @@ def train() -> None:
     print(f'***** Train model: {MODEL_ID} on dataset: {DATASET_NAME} *****')
     dataset = load_dataset("AutoModelForSequenceClassification", DATASET_NAME)
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
+
+    # Configuring LoRA
+    config = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        target_modules=["query_key_value"],
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM"
+    )
+
+    model = get_peft_model(model, config)
 
     nltk.download("punkt")
 
