@@ -16,20 +16,20 @@ id2label = {id: label for label, id in label2id.items()}
 def load_dataset(model_type: str = "AutoModelForSequenceClassification", dataset_name='amazon') -> DatasetDict:
     """Load dataset."""
     dataset_pandas = pd.read_csv(
-        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{dataset_name}/data.csv",
+        ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv",
         # header=None,
         # names=["id", "bert_sentence", "t5_sentence", "target", "label"],
         # names=["label", "text"],
     )
     # dataset_pandas = dataset_pandas.iloc[:1000]
 
-    dataset_pandas["t5_sentence"] = dataset_pandas["t5_sentence"].astype(str)
+    dataset_pandas["text"] = dataset_pandas["text"].astype(str)
     dataset = Dataset.from_pandas(dataset_pandas)
     # dataset = dataset.shuffle(seed=42)
     # 70% train, 30% test + validation
-    train_testval = dataset.train_test_split(test_size=0.3)
+    train_testval = dataset.train_test_split(test_size=0.25)
     # Split the 30% test + valid in half test, half valid
-    test_valid = train_testval['test'].train_test_split(test_size=0.5)
+    test_valid = train_testval['test'].train_test_split(test_size=0.4)
     # gather everyone if you want to have a single DatasetDict
     dataset = DatasetDict({
         'train': train_testval['train'],
@@ -75,13 +75,13 @@ def load_instruction_dataset(model_type: str = "AutoModelForSequenceClassificati
 
 def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_of_split=5, dataset_name='amazon') -> pandas.DataFrame:
     dataset_pandas = pd.read_csv(
-        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{dataset_name}/data.csv"
+        ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
     )
 
-    dataset_pandas["text"] = dataset_pandas["t5_sentence"].astype(str)
+    dataset_pandas["text"] = dataset_pandas["text"].astype(str)
     dataset = Dataset.from_pandas(dataset_pandas)
     # 90% train, 10% test
-    train_test = dataset.train_test_split(test_size=0.1, seed=42)
+    train_test = dataset.train_test_split(test_size=0.25, seed=42)
     kf = KFold(n_splits=5, shuffle=True, random_state=1)
 
     train = pd.DataFrame(train_test['train'])

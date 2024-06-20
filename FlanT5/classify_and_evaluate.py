@@ -15,12 +15,12 @@ sys.path.append('../')
 from Utils.utils import print_cur_time
 
 # Load the model and tokenizer
-MODEL_ID = "morturr/flan-t5-base-LoRA-amazon-text-classification"
+MODEL_ID = "morturr/flan-t5-base-amazon-text-classification"
 
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
 model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
 
-DATASET_NAME = 'sarcasm_headlines'
+DATASET_NAME = 'amazon'
 datasets_list = ['amazon', 'yelp', 'sarcasm_headlines']
 dataset = load_dataset("AutoModelForSequenceClassification", DATASET_NAME)
 # dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
@@ -82,7 +82,7 @@ def evaluate():
         progress_bar = tqdm(total=num_batches, desc="Evaluating")
 
         for i in range(0, len(dataset["test"]), batch_size):
-            batch_texts = dataset["test"]["t5_sentence"][i: i + batch_size]
+            batch_texts = dataset["test"]["text"][i: i + batch_size]
             batch_labels = dataset["test"]["label"][i: i + batch_size]
 
             batch_predictions = classify(batch_texts)
@@ -97,7 +97,12 @@ def evaluate():
         print(report)
 
 
-def evaluate_with_cv(data_dict):
+def evaluate_with_cv(data_dict, model_name, dataset_name):
+    global model
+
+    model = AutoModelForSequenceClassification.from_pretrained(f'morturr/{model_name}')
+    model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
+
     """Evaluate the model on the test dataset."""
     predictions_list, labels_list = [], []
 
@@ -108,7 +113,7 @@ def evaluate_with_cv(data_dict):
     progress_bar = tqdm(total=num_batches, desc="Evaluating")
 
     for i in range(0, len(data_dict["test"]), batch_size):
-        batch_texts = data_dict["test"]["t5_sentence"][i: i + batch_size]
+        batch_texts = data_dict["test"]["text"][i: i + batch_size]
         batch_labels = data_dict["test"]["label"][i: i + batch_size]
 
         batch_predictions = classify(batch_texts)
@@ -121,6 +126,11 @@ def evaluate_with_cv(data_dict):
     progress_bar.close()
     report = classification_report(labels_list, [pair[0] for pair in predictions_list])
     print(report)
+    with open('reports.txt', 'a') as report_file:
+        report_file.write(f'model name: {model_name}\n')
+        report_file.write(f'dataset name: {dataset_name}\n')
+        report_file.write(report)
+        report_file.write('\n*************\n')
 
 
 if __name__ == "__main__":

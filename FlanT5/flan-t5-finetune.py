@@ -30,7 +30,7 @@ import torch
 wandb.init(mode='disabled')
 
 DATASET_NAME = 'amazon'
-MODEL_ID = "google/flan-t5-xl"
+MODEL_ID = "google/flan-t5-base"
 # REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-LoRA-{DATASET_NAME}-text-classification"
 REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification"
 
@@ -144,8 +144,9 @@ def train_with_cv() -> None:
     """
     Train the model using cross validation and find the best hyperparameters.
     """
-    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
-    for split in kf.split(dataset):
+    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification", 'amazon')
+    for split_idx, split in enumerate(kf.split(dataset)):
+        REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-split-{split_idx}"
         model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
         tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
@@ -174,7 +175,7 @@ def train_with_cv() -> None:
         trainer.push_to_hub()
 
         # PREDICT ON 5TH SPLIT
-        evaluate_with_cv(data_dict)
+        evaluate_with_cv(data_dict, REPOSITORY_ID, dataset)
 
 
 if __name__ == "__main__":
