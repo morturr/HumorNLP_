@@ -15,7 +15,7 @@ sys.path.append('../')
 from Utils.utils import print_cur_time
 
 # Load the model and tokenizer
-MODEL_ID = "morturr/flan-t5-base-sarcasm_headlines-text-classification"
+MODEL_ID = "morturr/flan-t5-base-LoRA-amazon-text-classification"
 
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
 model.to("cuda") if torch.cuda.is_available() else model.to("cpu")

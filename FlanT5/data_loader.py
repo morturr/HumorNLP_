@@ -41,12 +41,44 @@ def load_dataset(model_type: str = "AutoModelForSequenceClassification", dataset
     return dataset
 
 
+def load_instruction_dataset(model_type: str = "AutoModelForSequenceClassification", dataset_name='amazon') -> DatasetDict:
+    """Load dataset for instruction fine tuning."""
+    dataset_pandas = pd.read_csv(
+        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{dataset_name}/data.csv",
+        # header=None,
+        # names=["id", "bert_sentence", "t5_sentence", "target", "label"],
+        # names=["label", "text"],
+    )
+    dataset_pandas = dataset_pandas.iloc[:10]
+
+    dataset_pandas["t5_sentence"] = dataset_pandas["t5_sentence"].astype(str)
+    dataset_pandas["t5_sentence"] = 'Determine if the following text is funny.\nTEXT: ' + \
+                                    dataset_pandas["t5_sentence"].astype(str) + \
+                                    '\nOPTIONS:\n-funny\n-not funny'
+
+    dataset = Dataset.from_pandas(dataset_pandas)
+    # dataset = dataset.shuffle(seed=42)
+    # 70% train, 30% test + validation
+    train_testval = dataset.train_test_split(test_size=0.3)
+    # Split the 30% test + valid in half test, half valid
+    test_valid = train_testval['test'].train_test_split(test_size=0.5)
+    # gather everyone if you want to have a single DatasetDict
+    dataset = DatasetDict({
+        'train': train_testval['train'],
+        'test': test_valid['test'],
+        'val': test_valid['train']})
+
+    # dataset = dataset.train_test_split(test_size=0.2)
+
+    return dataset
+
+
 def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_of_split=5, dataset_name='amazon') -> pandas.DataFrame:
     dataset_pandas = pd.read_csv(
         ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{dataset_name}/data.csv"
     )
 
-    dataset_pandas["t5_sentence"] = dataset_pandas["t5_sentence"].astype(str)
+    dataset_pandas["text"] = dataset_pandas["t5_sentence"].astype(str)
     dataset = Dataset.from_pandas(dataset_pandas)
     # 90% train, 10% test
     train_test = dataset.train_test_split(test_size=0.1, seed=42)
@@ -57,4 +89,4 @@ def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_
 
 
 if __name__ == "__main__":
-    print(load_dataset())
+    print(load_instruction_dataset())

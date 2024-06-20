@@ -9,9 +9,11 @@ from transformers import (
     AutoTokenizer,
     Trainer,
     TrainingArguments,
+    BitsAndBytesConfig,
 )
 from datasets import DatasetDict, Dataset
 
+import bitsandbytes as bnb
 from peft import (
     LoraConfig,
     PeftConfig,
@@ -23,16 +25,19 @@ from data_loader import id2label, label2id, load_dataset, load_cv_dataset
 from classify_and_evaluate import evaluate_with_cv
 import wandb
 
+import torch
+
 wandb.init(mode='disabled')
 
-DATASET_NAME = 'sarcasm_headlines'
-MODEL_ID = "google/flan-t5-base"
+DATASET_NAME = 'amazon'
+MODEL_ID = "google/flan-t5-xl"
+# REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-LoRA-{DATASET_NAME}-text-classification"
 REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification"
 
 config = AutoConfig.from_pretrained(
     MODEL_ID, num_labels=len(label2id), id2label=id2label, label2id=label2id
 )
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
 training_args = TrainingArguments(
@@ -42,8 +47,11 @@ training_args = TrainingArguments(
     logging_steps=100,
     # report_to="tensorboard",
     report_to="none",
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
+    # per_device_train_batch_size=8,
+    # per_device_eval_batch_size=8,
+    per_device_train_batch_size=1, # All the next 3 rows are for small batch size
+    per_device_eval_batch_size=1,
+    gradient_accumulation_steps=4,
     fp16=True,  # Overflows with fp16
     learning_rate=3e-4,
     save_strategy="epoch",
@@ -53,6 +61,7 @@ training_args = TrainingArguments(
     hub_strategy="every_save",
     hub_model_id=REPOSITORY_ID,
     hub_token=HfFolder.get_token(),
+    # bf16=True, # ADDED ON Q-LORA
 )
 
 
@@ -83,17 +92,33 @@ def train() -> None:
     dataset = load_dataset("AutoModelForSequenceClassification", DATASET_NAME)
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
-    # Configuring LoRA
-    config = LoraConfig(
-        r=16,
-        lora_alpha=32,
-        target_modules=["query_key_value"],
-        lora_dropout=0.05,
-        bias="none",
-        task_type="CAUSAL_LM"
-    )
-
-    model = get_peft_model(model, config)
+    # # Configuring LoRA
+    # bnb_config = BitsAndBytesConfig(
+    #     load_in_4bit=True,
+    #     load_4bit_use_double_quant=True,
+    #     bnb_4bit_quant_type="nf4",
+    #     bnb_4bit_compute_dtype=torch.bfloat16,
+    # )
+    #
+    # model = AutoModelForSequenceClassification.from_pretrained(
+    #     MODEL_ID,
+    #     device_map="auto",
+    #     trust_remote_code=True,
+    #     quantization_config=bnb_config,
+    # )
+    #
+    # model = prepare_model_for_kbit_training(model)
+    #
+    # lora_config = LoraConfig(
+    #     r=16,
+    #     lora_alpha=32,
+    #     target_modules=["q", "v"],
+    #     lora_dropout=0.05,
+    #     bias="none",
+    #     task_type="CAUSAL_LM"
+    # )
+    #
+    # model = get_peft_model(model, lora_config)
 
     nltk.download("punkt")
 
