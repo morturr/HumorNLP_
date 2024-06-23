@@ -3,7 +3,7 @@ import os
 import pandas
 import pandas as pd
 from datasets import Dataset, DatasetDict
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # DATASET_NAME = 'yelp'
@@ -27,9 +27,10 @@ def load_dataset(model_type: str = "AutoModelForSequenceClassification", dataset
     dataset = Dataset.from_pandas(dataset_pandas)
     # dataset = dataset.shuffle(seed=42)
     # 70% train, 30% test + validation
-    train_testval = dataset.train_test_split(test_size=0.25)
+    dataset = dataset.class_encode_column("label")
+    train_testval = dataset.train_test_split(test_size=0.25, seed=42, stratify_by_column='label')
     # Split the 30% test + valid in half test, half valid
-    test_valid = train_testval['test'].train_test_split(test_size=0.4)
+    test_valid = train_testval['test'].train_test_split(test_size=0.4, seed=42, stratify_by_column='label')
     # gather everyone if you want to have a single DatasetDict
     dataset = DatasetDict({
         'train': train_testval['train'],
@@ -39,6 +40,25 @@ def load_dataset(model_type: str = "AutoModelForSequenceClassification", dataset
     # dataset = dataset.train_test_split(test_size=0.2)
 
     return dataset
+
+
+def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_of_split=5, dataset_name='amazon') -> pandas.DataFrame:
+    dataset_pandas = pd.read_csv(
+        ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
+    )
+
+    # dataset_pandas = dataset_pandas.iloc[:100]
+
+    dataset_pandas["text"] = dataset_pandas["text"].astype(str)
+    dataset = Dataset.from_pandas(dataset_pandas)
+    # 90% train, 10% test
+    dataset = dataset.class_encode_column("label")
+    train_test = dataset.train_test_split(test_size=0.25, seed=42, stratify_by_column='label')
+    kf = StratifiedKFold(n_splits=num_of_split, shuffle=True, random_state=1)
+
+    train = pd.DataFrame(train_test['train'])
+
+    return train, kf
 
 
 def load_instruction_dataset(model_type: str = "AutoModelForSequenceClassification", dataset_name='amazon') -> DatasetDict:
@@ -73,20 +93,6 @@ def load_instruction_dataset(model_type: str = "AutoModelForSequenceClassificati
     return dataset
 
 
-def load_cv_dataset(model_type: str = "AutoModelForSequenceClassification", num_of_split=5, dataset_name='amazon') -> pandas.DataFrame:
-    dataset_pandas = pd.read_csv(
-        ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
-    )
-
-    dataset_pandas["text"] = dataset_pandas["text"].astype(str)
-    dataset = Dataset.from_pandas(dataset_pandas)
-    # 90% train, 10% test
-    train_test = dataset.train_test_split(test_size=0.25, seed=42)
-    kf = KFold(n_splits=5, shuffle=True, random_state=1)
-
-    train = pd.DataFrame(train_test['train'])
-    return train, kf
-
-
 if __name__ == "__main__":
-    print(load_instruction_dataset())
+    load_cv_dataset()
+    pass

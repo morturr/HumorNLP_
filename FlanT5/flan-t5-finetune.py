@@ -13,13 +13,15 @@ from transformers import (
 )
 from datasets import DatasetDict, Dataset
 
-import bitsandbytes as bnb
-from peft import (
-    LoraConfig,
-    PeftConfig,
-    get_peft_model,
-    prepare_model_for_kbit_training,
-)
+# import bitsandbytes as bnb
+# from peft import (
+#     LoraConfig,
+#     PeftConfig,
+#     get_peft_model,
+#     prepare_model_for_kbit_training,
+# )
+
+# from datetime import datetime
 
 from data_loader import id2label, label2id, load_dataset, load_cv_dataset
 from classify_and_evaluate import evaluate_with_cv
@@ -31,14 +33,7 @@ wandb.init(mode='disabled')
 
 DATASET_NAME = 'amazon'
 MODEL_ID = "google/flan-t5-base"
-# REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-LoRA-{DATASET_NAME}-text-classification"
-REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification"
-
-config = AutoConfig.from_pretrained(
-    MODEL_ID, num_labels=len(label2id), id2label=id2label, label2id=label2id
-)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config, device_map="auto")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-23-6-test"
 
 training_args = TrainingArguments(
     num_train_epochs=2,
@@ -47,11 +42,11 @@ training_args = TrainingArguments(
     logging_steps=100,
     # report_to="tensorboard",
     report_to="none",
-    # per_device_train_batch_size=8,
-    # per_device_eval_batch_size=8,
-    per_device_train_batch_size=1, # All the next 3 rows are for small batch size
-    per_device_eval_batch_size=1,
-    gradient_accumulation_steps=4,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    # per_device_train_batch_size=1, # All the next 3 rows are for small batch size
+    # per_device_eval_batch_size=1,
+    # gradient_accumulation_steps=4,
     fp16=True,  # Overflows with fp16
     learning_rate=3e-4,
     save_strategy="epoch",
@@ -61,13 +56,24 @@ training_args = TrainingArguments(
     hub_strategy="every_save",
     hub_model_id=REPOSITORY_ID,
     hub_token=HfFolder.get_token(),
+    seed=42,
     # bf16=True, # ADDED ON Q-LORA
 )
+
+config = AutoConfig.from_pretrained(
+    MODEL_ID, num_labels=len(label2id), id2label=id2label, label2id=label2id
+)
+# model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config) # maybe because of auto?
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+
+
+def init_model():
+    return AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
 
 
 def tokenize_function(examples) -> dict:
     """Tokenize the text column in the dataset"""
-    return tokenizer(examples["t5_sentence"], padding="max_length", truncation=True)
+    return tokenizer(examples["text"], padding="max_length", truncation=True)
 
 
 def compute_metrics(eval_pred) -> dict:
@@ -123,7 +129,8 @@ def train() -> None:
     nltk.download("punkt")
 
     trainer = Trainer(
-        model=model,
+        # model=model,
+        model_init=init_model,
         args=training_args,
         train_dataset=tokenized_datasets["train"],
         eval_dataset=tokenized_datasets["val"],
@@ -144,10 +151,15 @@ def train_with_cv() -> None:
     """
     Train the model using cross validation and find the best hyperparameters.
     """
-    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification", 'amazon')
-    for split_idx, split in enumerate(kf.split(dataset)):
+    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification", num_of_split=5, dataset_name=DATASET_NAME)
+    for split_idx, split in enumerate(kf.split(dataset['text'], dataset['label'])):
+        # Set new repository
         REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-split-{split_idx}"
-        model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
+        training_args.output_dir = REPOSITORY_ID
+        training_args.hub_model_id = REPOSITORY_ID
+        training_args.hub_token = HfFolder.get_token()
+
+        # model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
         tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
         train = Dataset.from_pandas(dataset.iloc[split[0]])
@@ -160,7 +172,7 @@ def train_with_cv() -> None:
         nltk.download("punkt")
 
         trainer = Trainer(
-            model=model,
+            model_init=init_model,
             args=training_args,
             train_dataset=tokenized_datasets["train"],
             compute_metrics=compute_metrics,
@@ -175,9 +187,9 @@ def train_with_cv() -> None:
         trainer.push_to_hub()
 
         # PREDICT ON 5TH SPLIT
-        evaluate_with_cv(data_dict, REPOSITORY_ID, dataset)
+        evaluate_with_cv(data_dict, REPOSITORY_ID, DATASET_NAME)
 
 
 if __name__ == "__main__":
-    train()
-    # train_with_cv()
+    # train()
+    train_with_cv()
