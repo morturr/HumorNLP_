@@ -21,7 +21,7 @@ from datasets import DatasetDict, Dataset
 #     prepare_model_for_kbit_training,
 # )
 
-# from datetime import datetime
+from datetime import datetime
 
 from data_loader import id2label, label2id, load_dataset, load_cv_dataset
 from classify_and_evaluate import evaluate_with_cv
@@ -33,7 +33,8 @@ wandb.init(mode='disabled')
 
 DATASET_NAME = 'amazon'
 MODEL_ID = "google/flan-t5-base"
-REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-23-6-test"
+REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-{datetime.now().date()}"
+
 
 training_args = TrainingArguments(
     num_train_epochs=2,
@@ -154,7 +155,8 @@ def train_with_cv() -> None:
     dataset, kf = load_cv_dataset("AutoModelForSequenceClassification", num_of_split=5, dataset_name=DATASET_NAME)
     for split_idx, split in enumerate(kf.split(dataset['text'], dataset['label'])):
         # Set new repository
-        REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-split-{split_idx}"
+        REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-" \
+                        f"split-{split_idx}-{datetime.now().date()}"
         training_args.output_dir = REPOSITORY_ID
         training_args.hub_model_id = REPOSITORY_ID
         training_args.hub_token = HfFolder.get_token()
