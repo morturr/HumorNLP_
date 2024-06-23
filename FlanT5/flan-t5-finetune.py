@@ -9,7 +9,8 @@ from transformers import (
     AutoTokenizer,
     Trainer,
     TrainingArguments,
-    BitsAndBytesConfig,
+    # BitsAndBytesConfig,
+    HfArgumentParser,
 )
 from datasets import DatasetDict, Dataset
 
@@ -23,7 +24,10 @@ from datasets import DatasetDict, Dataset
 
 from datetime import datetime
 
+import itertools
+
 from data_loader import id2label, label2id, load_dataset, load_cv_dataset
+from flan_utils import FlanTrainingArguments
 from classify_and_evaluate import evaluate_with_cv
 import wandb
 
@@ -31,10 +35,12 @@ import torch
 
 wandb.init(mode='disabled')
 
+parser = HfArgumentParser((FlanTrainingArguments))
+data_args = parser.parse_args_into_dataclasses()
+
 DATASET_NAME = 'amazon'
 MODEL_ID = "google/flan-t5-base"
-REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-{datetime.now().date()}"
-
+REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-{data_args.dataset_name}-text-classification-{datetime.now().date()}"
 
 training_args = TrainingArguments(
     num_train_epochs=2,
@@ -62,14 +68,14 @@ training_args = TrainingArguments(
 )
 
 config = AutoConfig.from_pretrained(
-    MODEL_ID, num_labels=len(label2id), id2label=id2label, label2id=label2id
+    data_args.model_name, num_labels=len(label2id), id2label=id2label, label2id=label2id
 )
 # model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config) # maybe because of auto?
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+tokenizer = AutoTokenizer.from_pretrained(data_args.model_name)
 
 
 def init_model():
-    return AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
+    return AutoModelForSequenceClassification.from_pretrained(data_args.model_name, config=config)
 
 
 def tokenize_function(examples) -> dict:
@@ -95,8 +101,8 @@ def train() -> None:
     """
     Train the model and save it to the Hugging Face Hub.
     """
-    print(f'***** Train model: {MODEL_ID} on dataset: {DATASET_NAME} *****')
-    dataset = load_dataset("AutoModelForSequenceClassification", DATASET_NAME)
+    print(f'***** Train model: {data_args.model_name} on dataset: {data_args.dataset_name} *****')
+    dataset = load_dataset("AutoModelForSequenceClassification", data_args.dataset_name)
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
     # # Configuring LoRA
@@ -152,46 +158,76 @@ def train_with_cv() -> None:
     """
     Train the model using cross validation and find the best hyperparameters.
     """
-    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification", num_of_split=5, dataset_name=DATASET_NAME)
+    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification",
+                                  num_of_split=5, dataset_name=data_args.dataset_name)
     for split_idx, split in enumerate(kf.split(dataset['text'], dataset['label'])):
         # Set new repository
-        REPOSITORY_ID = f"{MODEL_ID.split('/')[1]}-{DATASET_NAME}-text-classification-" \
-                        f"split-{split_idx}-{datetime.now().date()}"
-        training_args.output_dir = REPOSITORY_ID
-        training_args.hub_model_id = REPOSITORY_ID
-        training_args.hub_token = HfFolder.get_token()
+        for ep, bs, lr, seed in itertools.product(data_args.epochs, data_args.batch_sizes,
+                                                  data_args.learning_rates, data_args.seeds):
+            run_args = {
+                'dataset_name': data_args.dataset_name,
+                'epoch': ep,
+                'batch_size': bs,
+                'learning_rate': lr,
+                'seed': seed}
 
-        # model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+            REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-{data_args.dataset_name}-text-classification-" \
+                            f"split-{split_idx}-{datetime.now().date()}"
 
-        train = Dataset.from_pandas(dataset.iloc[split[0]])
-        test = Dataset.from_pandas(dataset.iloc[split[1]])
-        data_dict = DatasetDict()
-        data_dict['train'] = train
-        data_dict['test'] = test
-        tokenized_datasets = data_dict.map(tokenize_function, batched=True)
+            training_args_update = {
+                "num_train_epochs": ep,
+                "per_device_train_batch_size": bs,
+                'per_device_eval_batch_size': bs,
+                'learning_rate': lr,
+                'seed': seed,
+                'output_dir': REPOSITORY_ID,
+                'hub_model_id': REPOSITORY_ID,
+                'hub_token': HfFolder.get_token()
+            }
 
-        nltk.download("punkt")
+            training_args = update_training_arguments(training_args, training_args_update)
 
-        trainer = Trainer(
-            model_init=init_model,
-            args=training_args,
-            train_dataset=tokenized_datasets["train"],
-            compute_metrics=compute_metrics,
-        )
+            # model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
+            tokenizer = AutoTokenizer.from_pretrained(data_args.model_name)
 
-        # TRAIN
-        trainer.train()
+            train = Dataset.from_pandas(dataset.iloc[split[0]])
+            test = Dataset.from_pandas(dataset.iloc[split[1]])
+            data_dict = DatasetDict()
+            data_dict['train'] = train
+            data_dict['test'] = test
+            tokenized_datasets = data_dict.map(tokenize_function, batched=True)
 
-        # SAVE AND EVALUATE
-        tokenizer.save_pretrained(REPOSITORY_ID)
-        trainer.create_model_card()
-        trainer.push_to_hub()
+            nltk.download("punkt")
 
-        # PREDICT ON 5TH SPLIT
-        evaluate_with_cv(data_dict, REPOSITORY_ID, DATASET_NAME)
+            trainer = Trainer(
+                model_init=init_model,
+                args=training_args,
+                train_dataset=tokenized_datasets["train"],
+                compute_metrics=compute_metrics,
+            )
+
+            # TRAIN
+            trainer.train()
+
+            # SAVE AND EVALUATE
+            tokenizer.save_pretrained(REPOSITORY_ID)
+            trainer.create_model_card()
+            trainer.push_to_hub()
+
+            # PREDICT ON 5TH SPLIT
+            evaluate_with_cv(data_dict, REPOSITORY_ID, run_args)
+
+
+def update_training_arguments(training_args, **kwargs):
+    for key, value in kwargs.items():
+        if hasattr(training_args, key):
+            setattr(training_args, key, value)
+        else:
+            raise AttributeError(f"TrainingArguments has no attribute '{key}'")
+    return training_args
 
 
 if __name__ == "__main__":
     # train()
     train_with_cv()
+    pass

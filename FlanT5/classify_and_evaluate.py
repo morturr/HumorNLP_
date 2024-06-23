@@ -3,10 +3,18 @@ from typing import List, Tuple
 
 import torch
 from loguru import logger
-from sklearn.metrics import classification_report
+from sklearn.metrics import (
+    classification_report,
+    accuracy_score,
+    recall_score,
+    precision_score,
+    f1_score
+)
+
+import os.path
 from tqdm.auto import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
+import csv
 from data_loader import id2label, load_dataset, load_cv_dataset
 from datasets import DatasetDict
 import sys
@@ -97,7 +105,7 @@ def evaluate():
         print(report)
 
 
-def evaluate_with_cv(data_dict, model_name, dataset_name):
+def evaluate_with_cv(data_dict, model_name, run_args):
     global model
 
     model = AutoModelForSequenceClassification.from_pretrained(f'morturr/{model_name}')
@@ -125,14 +133,44 @@ def evaluate_with_cv(data_dict, model_name, dataset_name):
 
     progress_bar.close()
     report = classification_report(labels_list, [pair[0] for pair in predictions_list])
+    accuracy = accuracy_score(labels_list, predictions_list),
+    precision = precision_score(labels_list, predictions_list)
+    recall = recall_score(labels_list, predictions_list)
+    f1 = f1_score(labels_list, predictions_list)
+
+    result_filename = f'{run_args.dataset_name}_scores.csv'
+    write_header = False if os.path.isfile(result_filename) else True
+
+    with open(result_filename, 'a') as csvfile:
+        results_dict = {
+            'model': model_name,
+            'dataset': run_args.dataset_name,
+            'epoch': run_args.epoch,
+            'batch_size': run_args.batch_size,
+            'learning_rate': run_args.learning_rate,
+            'seed': run_args.seed,
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1
+        }
+
+        writer = csv.DictWriter(csvfile,
+                                fieldnames=['model', 'dataset',
+                                            'epoch', 'batch_size', 'learning_rate',
+                                            'seed', 'accuracy', 'precision',
+                                            'recall', 'f1'])
+        if write_header:
+            writer.writeheader()
+        writer.writerow(results_dict)
+
     print(report)
-    with open('reports.txt', 'a') as report_file:
+    with open(f'{run_args.dataset_name}_reports.txt', 'a') as report_file:
         report_file.write(f'model name: {model_name}\n')
-        report_file.write(f'dataset name: {dataset_name}\n')
+        report_file.write(f'dataset name: {run_args.dataset_name}\n')
         report_file.write(report)
         report_file.write('\n*************\n')
 
 
 if __name__ == "__main__":
     evaluate()
-
