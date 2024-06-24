@@ -132,23 +132,26 @@ def evaluate_with_cv(data_dict, model_name, run_args):
         progress_bar.update(1)
 
     progress_bar.close()
-    report = classification_report(labels_list, [pair[0] for pair in predictions_list])
-    accuracy = accuracy_score(labels_list, predictions_list),
-    precision = precision_score(labels_list, predictions_list)
-    recall = recall_score(labels_list, predictions_list)
-    f1 = f1_score(labels_list, predictions_list)
+    predictions_list = [pair[0] for pair in predictions_list]
 
-    result_filename = f'{run_args.dataset_name}_scores.csv'
+    # report = classification_report(labels_list, [pair[0] for pair in predictions_list])
+    report = classification_report(labels_list, predictions_list)
+    accuracy = accuracy_score(labels_list, predictions_list)
+    precision = precision_score(labels_list, predictions_list, pos_label='funny')
+    recall = recall_score(labels_list, predictions_list, pos_label='funny')
+    f1 = f1_score(labels_list, predictions_list, pos_label='funny')
+
+    result_filename = f'{run_args["dataset_name"]}_scores.csv'
     write_header = False if os.path.isfile(result_filename) else True
 
     with open(result_filename, 'a') as csvfile:
         results_dict = {
             'model': model_name,
-            'dataset': run_args.dataset_name,
-            'epoch': run_args.epoch,
-            'batch_size': run_args.batch_size,
-            'learning_rate': run_args.learning_rate,
-            'seed': run_args.seed,
+            'dataset': run_args['dataset_name'],
+            'epoch': run_args['epoch'],
+            'batch_size': run_args['batch_size'],
+            'learning_rate': run_args['learning_rate'],
+            'seed': run_args['seed'],
             'accuracy': accuracy,
             'precision': precision,
             'recall': recall,
@@ -165,9 +168,12 @@ def evaluate_with_cv(data_dict, model_name, run_args):
         writer.writerow(results_dict)
 
     print(report)
-    with open(f'{run_args.dataset_name}_reports.txt', 'a') as report_file:
+    print(results_dict)
+    print('*******************************')
+
+    with open(f'{run_args["dataset_name"]}_reports.txt', 'a') as report_file:
         report_file.write(f'model name: {model_name}\n')
-        report_file.write(f'dataset name: {run_args.dataset_name}\n')
+        report_file.write(f'dataset name: {run_args["dataset_name"]}\n')
         report_file.write(report)
         report_file.write('\n*************\n')
 

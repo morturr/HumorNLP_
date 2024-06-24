@@ -35,9 +35,8 @@ import torch
 
 wandb.init(mode='disabled')
 
-parser = HfArgumentParser((FlanTrainingArguments))
-data_args = parser.parse_args_into_dataclasses()
-
+parser = HfArgumentParser(FlanTrainingArguments)
+data_args = parser.parse_args_into_dataclasses()[0]
 DATASET_NAME = 'amazon'
 MODEL_ID = "google/flan-t5-base"
 REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-{data_args.dataset_name}-text-classification-{datetime.now().date()}"
@@ -172,7 +171,10 @@ def train_with_cv() -> None:
                 'seed': seed}
 
             REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-{data_args.dataset_name}-text-classification-" \
-                            f"split-{split_idx}-{datetime.now().date()}"
+                            f"{datetime.now().date()}"
+
+            print(f'training {REPOSITORY_ID}')
+            print(f'args = {run_args}')
 
             training_args_update = {
                 "num_train_epochs": ep,
@@ -185,7 +187,7 @@ def train_with_cv() -> None:
                 'hub_token': HfFolder.get_token()
             }
 
-            training_args = update_training_arguments(training_args, training_args_update)
+            update_training_arguments(**training_args_update)
 
             # model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config)
             tokenizer = AutoTokenizer.from_pretrained(data_args.model_name)
@@ -218,13 +220,13 @@ def train_with_cv() -> None:
             evaluate_with_cv(data_dict, REPOSITORY_ID, run_args)
 
 
-def update_training_arguments(training_args, **kwargs):
+def update_training_arguments(**kwargs):
+    global training_args
     for key, value in kwargs.items():
         if hasattr(training_args, key):
             setattr(training_args, key, value)
         else:
             raise AttributeError(f"TrainingArguments has no attribute '{key}'")
-    return training_args
 
 
 if __name__ == "__main__":
