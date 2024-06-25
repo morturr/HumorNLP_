@@ -13,9 +13,14 @@ from sklearn.metrics import (
 
 import os.path
 from tqdm.auto import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    HfArgumentParser,
+)
 import csv
-from data_loader import id2label, load_dataset, load_cv_dataset
+from data_loader import id2label, load_dataset
+from flan_utils import FlanEvaluationArguments
 from datasets import DatasetDict
 import sys
 
@@ -23,15 +28,18 @@ sys.path.append('../')
 from Utils.utils import print_cur_time
 
 # Load the model and tokenizer
-MODEL_ID = "morturr/flan-t5-base-amazon-text-classification"
+parser = HfArgumentParser(FlanEvaluationArguments)
+data_args = parser.parse_args_into_dataclasses()[0]
+
+# MODEL_ID = "morturr/flan-t5-base-amazon-text-classification"
+MODEL_ID = data_args.model_id
 
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
 model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
 
-DATASET_NAME = 'amazon'
-datasets_list = ['amazon', 'yelp', 'sarcasm_headlines']
-dataset = load_dataset("AutoModelForSequenceClassification", DATASET_NAME)
-# dataset, kf = load_cv_dataset("AutoModelForSequenceClassification")
+# DATASET_NAME = 'amazon'
+# datasets_list = ['amazon', 'yelp', 'sarcasm_headlines']
+# dataset = load_dataset(DATASET_NAME)
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
@@ -77,8 +85,8 @@ def classify(texts_to_classify: List[str]) -> List[Tuple[str, float]]:
 
 def evaluate():
     """Evaluate the model on the test dataset."""
-    for dataset_name in datasets_list:
-        dataset = load_dataset("AutoModelForSequenceClassification", dataset_name)
+    for dataset_name in data_args.datasets:
+        dataset = load_dataset(dataset_name=dataset_name, percent=data_args.samples_percent)
 
         print_cur_time(f'***** Evaluate model: {MODEL_ID} on dataset: {dataset_name} *****')
         predictions_list, labels_list = [], []

@@ -26,7 +26,7 @@ from datetime import datetime
 
 import itertools
 
-from data_loader import id2label, label2id, load_dataset, load_cv_dataset
+from data_loader import id2label, label2id, load_dataset, load_cv_dataset, load_LOO_dataset
 from flan_utils import FlanTrainingArguments
 from classify_and_evaluate import evaluate_with_cv
 import wandb
@@ -101,7 +101,7 @@ def train() -> None:
     Train the model and save it to the Hugging Face Hub.
     """
     print(f'***** Train model: {data_args.model_name} on dataset: {data_args.dataset_name} *****')
-    dataset = load_dataset("AutoModelForSequenceClassification", data_args.dataset_name)
+    dataset = load_dataset(dataset_name=data_args.dataset_name, percent=data_args.samples_percent)
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
     # # Configuring LoRA
@@ -133,32 +133,128 @@ def train() -> None:
     # model = get_peft_model(model, lora_config)
 
     nltk.download("punkt")
+    ep = data_args.epochs[0]
+    bs = data_args.batch_sizes[0]
+    lr = data_args.learning_rates[0]
 
-    trainer = Trainer(
-        # model=model,
-        model_init=init_model,
-        args=training_args,
-        train_dataset=tokenized_datasets["train"],
-        eval_dataset=tokenized_datasets["val"],
-        compute_metrics=compute_metrics,
-    )
+    for seed in data_args.seeds:
+        run_args = {
+            'dataset_name': data_args.dataset_name,
+            'epoch': ep,
+            'batch_size': bs,
+            'learning_rate': lr,
+            'seed': seed}
 
-    # TRAIN
-    trainer.train()
+        REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-{data_args.dataset_name}-text-classification-" \
+                        f"{datetime.now().date()}-seed-{seed}"
 
-    # SAVE AND EVALUATE
-    tokenizer.save_pretrained(REPOSITORY_ID)
-    trainer.create_model_card()
-    trainer.push_to_hub()
-    print(trainer.evaluate())
+        print(f'training {REPOSITORY_ID}')
+        print(f'args = {run_args}')
+
+        training_args_update = {
+            "num_train_epochs": ep,
+            "per_device_train_batch_size": bs,
+            'per_device_eval_batch_size': bs,
+            'learning_rate': lr,
+            'seed': seed,
+            'output_dir': REPOSITORY_ID,
+            'hub_model_id': REPOSITORY_ID,
+            'hub_token': HfFolder.get_token()
+        }
+
+        update_training_arguments(**training_args_update)
+
+        trainer = Trainer(
+            # model=model,
+            model_init=init_model,
+            args=training_args,
+            train_dataset=tokenized_datasets["train"],
+            eval_dataset=tokenized_datasets["val"],
+            compute_metrics=compute_metrics,
+        )
+
+        # TRAIN
+        trainer.train()
+
+        # SAVE AND EVALUATE
+        tokenizer.save_pretrained(REPOSITORY_ID)
+        trainer.create_model_card()
+        trainer.push_to_hub()
+        print(trainer.evaluate())
+
+
+def train_one_out() -> None:
+    """
+    Train the model on all datasets in leave-one-out manner
+    """
+    for test_dataset in data_args.leave_one_out_datasets:
+        print(f'***** Train leave-one-out model: {data_args.model_name}. without dataset: {test_dataset} *****')
+        dataset = load_LOO_dataset(data_args.leave_one_out_datasets, test_dataset)
+        tokenized_datasets = dataset.map(tokenize_function, batched=True)
+
+        nltk.download("punkt")
+        ep = data_args.epochs[0]
+        bs = data_args.batch_sizes[0]
+        lr = data_args.learning_rates[0]
+
+        data_dict = DatasetDict()
+        data_dict['train'] = dataset['train']
+        data_dict['test'] = dataset['test']
+
+        for seed in data_args.seeds:
+            run_args = {
+                'dataset_name': 'loo_' + test_dataset,
+                'epoch': ep,
+                'batch_size': bs,
+                'learning_rate': lr,
+                'seed': seed}
+
+            REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-loo-{test_dataset}-text-classification-" \
+                            f"{datetime.now().date()}-seed-{seed}"
+
+            print(f'training {REPOSITORY_ID}')
+            print(f'args = {run_args}')
+
+            training_args_update = {
+                "num_train_epochs": ep,
+                "per_device_train_batch_size": bs,
+                'per_device_eval_batch_size': bs,
+                'learning_rate': lr,
+                'seed': seed,
+                'output_dir': REPOSITORY_ID,
+                'hub_model_id': REPOSITORY_ID,
+                'hub_token': HfFolder.get_token()
+            }
+
+            update_training_arguments(**training_args_update)
+
+            trainer = Trainer(
+                # model=model,
+                model_init=init_model,
+                args=training_args,
+                train_dataset=tokenized_datasets["train"],
+                eval_dataset=tokenized_datasets["val"],
+                compute_metrics=compute_metrics,
+            )
+
+            # TRAIN
+            trainer.train()
+
+            # SAVE AND EVALUATE
+            tokenizer.save_pretrained(REPOSITORY_ID)
+            trainer.create_model_card()
+            trainer.push_to_hub()
+            print(trainer.evaluate())
+
+            evaluate_with_cv(data_dict, REPOSITORY_ID, run_args)
 
 
 def train_with_cv() -> None:
     """
     Train the model using cross validation and find the best hyperparameters.
     """
-    dataset, kf = load_cv_dataset("AutoModelForSequenceClassification",
-                                  num_of_split=5, dataset_name=data_args.dataset_name)
+    dataset, kf = load_cv_dataset(num_of_split=5, dataset_name=data_args.dataset_name,
+                                  percent=data_args.samples_percent)
     for split_idx, split in enumerate(kf.split(dataset['text'], dataset['label'])):
         # Set new repository
         for ep, bs, lr, seed in itertools.product(data_args.epochs, data_args.batch_sizes,
@@ -230,6 +326,6 @@ def update_training_arguments(**kwargs):
 
 
 if __name__ == "__main__":
-    # train()
-    train_with_cv()
+    train()
+    # train_with_cv()
     pass
