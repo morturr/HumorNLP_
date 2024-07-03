@@ -12,7 +12,7 @@ from transformers import (
     # BitsAndBytesConfig,
     HfArgumentParser,
 )
-from datasets import DatasetDict, Dataset
+from datasets import DatasetDict, Dataset, concatenate_datasets
 
 # import bitsandbytes as bnb
 # from peft import (
@@ -26,8 +26,8 @@ from datetime import datetime
 
 import itertools
 
-from data_loader import id2label, label2id, load_dataset, load_cv_dataset, load_LOO_dataset
-from flan_utils import FlanTrainingArguments
+from data_loader import id2label, label2id, load_dataset, load_cv_dataset, load_LOO_datasets, load_current_LOO
+from flan_utils import FlanTrainingArguments, FlanEvaluationArguments
 from classify_and_evaluate import evaluate_with_cv
 import wandb
 
@@ -35,7 +35,7 @@ import torch
 
 wandb.init(mode='disabled')
 
-parser = HfArgumentParser(FlanTrainingArguments)
+parser = HfArgumentParser((FlanTrainingArguments, FlanEvaluationArguments))
 data_args = parser.parse_args_into_dataclasses()[0]
 DATASET_NAME = 'amazon'
 MODEL_ID = "google/flan-t5-base"
@@ -101,7 +101,8 @@ def train() -> None:
     Train the model and save it to the Hugging Face Hub.
     """
     print(f'***** Train model: {data_args.model_name} on dataset: {data_args.dataset_name} *****')
-    dataset = load_dataset(dataset_name=data_args.dataset_name, percent=data_args.samples_percent)
+    dataset = load_dataset(dataset_name=data_args.dataset_name, percent=data_args.samples_percent,
+                           data_file_path=data_args.data_file_path)
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
     # # Configuring LoRA
@@ -187,29 +188,38 @@ def train_one_out() -> None:
     """
     Train the model on all datasets in leave-one-out manner
     """
-    for test_dataset in data_args.leave_one_out_datasets:
-        print(f'***** Train leave-one-out model: {data_args.model_name}. without dataset: {test_dataset} *****')
-        dataset = load_LOO_dataset(data_args.leave_one_out_datasets, test_dataset)
-        tokenized_datasets = dataset.map(tokenize_function, batched=True)
+    all_datasets_dict = load_LOO_datasets(data_args.leave_one_out_datasets)
+
+    for leave_out_dataset in data_args.leave_one_out_datasets:
+        print(f'***** Train leave-one-out model: {data_args.model_name}. without dataset: {leave_out_dataset} *****')
+
+        curr_data_dict = load_current_LOO(data_args.leave_one_out_datasets, leave_out_dataset, all_datasets_dict)
+        tokenized_datasets = curr_data_dict.map(tokenize_function, batched=True)
+
+
+        # dataset = load_LOO_datasets(data_args.leave_one_out_datasets, test_dataset)
+        # tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
         nltk.download("punkt")
         ep = data_args.epochs[0]
         bs = data_args.batch_sizes[0]
         lr = data_args.learning_rates[0]
 
-        data_dict = DatasetDict()
-        data_dict['train'] = dataset['train']
-        data_dict['test'] = dataset['test']
+        # data_dict = DatasetDict()
+        # data_dict['train'] = dataset['train']
+        # data_dict['test'] = dataset['test']
 
         for seed in data_args.seeds:
             run_args = {
-                'dataset_name': 'loo_' + test_dataset,
+                'model_name': REPOSITORY_ID,
+                'train_dataset': 'loo_' + leave_out_dataset,
+                'evaluate_dataset': '',
                 'epoch': ep,
                 'batch_size': bs,
                 'learning_rate': lr,
                 'seed': seed}
 
-            REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-loo-{test_dataset}-text-classification-" \
+            REPOSITORY_ID = f"{data_args.model_name.split('/')[1]}-loo-{leave_out_dataset}-text-classification-" \
                             f"{datetime.now().date()}-seed-{seed}"
 
             print(f'training {REPOSITORY_ID}')
@@ -246,7 +256,12 @@ def train_one_out() -> None:
             trainer.push_to_hub()
             print(trainer.evaluate())
 
-            evaluate_with_cv(data_dict, REPOSITORY_ID, run_args)
+            for test_name in data_args.leave_one_out_datasets:
+                print(f'Evaluating {run_args["model_name"]} on {test_name}')
+                data_dict = DatasetDict()
+                data_dict['test'] = all_datasets_dict[test_name]['test']
+                run_args['evaluate_dataset'] = test_name
+                evaluate_with_cv(data_dict, run_args)
 
 
 def train_with_cv() -> None:
@@ -326,6 +341,10 @@ def update_training_arguments(**kwargs):
 
 
 if __name__ == "__main__":
-    train()
-    # train_with_cv()
+    if not data_args.task_type or data_args.task_type == 'TRAIN':
+        train()
+    elif data_args.task_type == 'TRAIN-WITH-CV':
+        train_with_cv()
+    elif data_args.task_type == 'TRAIN_LOO':
+        train_one_out()
     pass

@@ -12,6 +12,7 @@ from sklearn.metrics import (
 )
 
 import os.path
+import os
 from tqdm.auto import tqdm
 from transformers import (
     AutoModelForSequenceClassification,
@@ -20,28 +21,16 @@ from transformers import (
 )
 import csv
 from data_loader import id2label, load_dataset
-from flan_utils import FlanEvaluationArguments
+# from flan_utils import FlanEvaluationArguments
+from flan_utils import FlanTrainingArguments, FlanEvaluationArguments
+
 from datasets import DatasetDict
 import sys
 
 sys.path.append('../')
 from Utils.utils import print_cur_time
 
-# Load the model and tokenizer
-parser = HfArgumentParser(FlanEvaluationArguments)
-data_args = parser.parse_args_into_dataclasses()[0]
-
-# MODEL_ID = "morturr/flan-t5-base-amazon-text-classification"
-MODEL_ID = data_args.model_id
-
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
-model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
-
-# DATASET_NAME = 'amazon'
-# datasets_list = ['amazon', 'yelp', 'sarcasm_headlines']
-# dataset = load_dataset(DATASET_NAME)
-
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+DATASETS = ['amazon', 'yelp_reviews', 'dadjokes', 'one_liners', 'headlines']
 
 
 def classify(texts_to_classify: List[str]) -> List[Tuple[str, float]]:
@@ -85,10 +74,30 @@ def classify(texts_to_classify: List[str]) -> List[Tuple[str, float]]:
 
 def evaluate():
     """Evaluate the model on the test dataset."""
-    for dataset_name in data_args.datasets:
-        dataset = load_dataset(dataset_name=dataset_name, percent=data_args.samples_percent)
+    if data_args.test_file_path and len(data_args.datasets) > 1:
+        raise Exception("Evaluate got test file path but more than a single dataset")
 
-        print_cur_time(f'***** Evaluate model: {MODEL_ID} on dataset: {dataset_name} *****')
+    model_name = MODEL_ID[MODEL_ID.index('morturr/') + len('morturr/'):]
+
+    # Heuristic to find the trained dataset in model name
+    # PAY ATTENTION TO IT!
+    trained_dataset = [name for name in DATASETS if name in model_name][0]
+    model_seed = int(MODEL_ID[MODEL_ID.index('seed-') + len('seed-'):])
+
+    run_args = {
+        'train_dataset': trained_dataset,
+        'model_name': model_name,
+        'evaluate_dataset': '',
+        'seed': model_seed}
+
+    for eval_dataset_name in data_args.datasets:
+        run_args['evaluate_dataset'] = eval_dataset_name
+
+        dataset = load_dataset(dataset_name=eval_dataset_name,
+                               percent=data_args.eval_samples_percent,
+                               data_file_path=data_args.test_file_path)
+
+        print_cur_time(f'***** Evaluate model: {MODEL_ID} on dataset: {eval_dataset_name} *****')
         predictions_list, labels_list = [], []
 
         batch_size = 16  # Adjust batch size based GPU capacity
@@ -109,15 +118,23 @@ def evaluate():
             progress_bar.update(1)
 
         progress_bar.close()
-        report = classification_report(labels_list, [pair[0] for pair in predictions_list])
-        print(report)
+
+        predictions_list = [pair[0] for pair in predictions_list]
+
+        if data_args.create_report_files:
+            create_report(labels_list, predictions_list, run_args)
+        else:
+            report = classification_report(labels_list, predictions_list)
+            print(report)
 
 
-def evaluate_with_cv(data_dict, model_name, run_args):
-    global model
+def evaluate_with_cv(data_dict, run_args):
+    global model, tokenizer
 
-    model = AutoModelForSequenceClassification.from_pretrained(f'morturr/{model_name}')
+    model = AutoModelForSequenceClassification.from_pretrained(f'morturr/{run_args["model_name"]}')
     model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
+
+    tokenizer = AutoTokenizer.from_pretrained(f'morturr/{run_args["model_name"]}')
 
     """Evaluate the model on the test dataset."""
     predictions_list, labels_list = [], []
@@ -142,49 +159,84 @@ def evaluate_with_cv(data_dict, model_name, run_args):
     progress_bar.close()
     predictions_list = [pair[0] for pair in predictions_list]
 
-    # report = classification_report(labels_list, [pair[0] for pair in predictions_list])
+    if data_args.create_report_files:
+        create_report(labels_list, predictions_list, run_args)
+    else:
+        report = classification_report(labels_list, predictions_list)
+        print(report)
+
+
+def create_report(labels_list, predictions_list, run_args):
     report = classification_report(labels_list, predictions_list)
     accuracy = accuracy_score(labels_list, predictions_list)
     precision = precision_score(labels_list, predictions_list, pos_label='funny')
     recall = recall_score(labels_list, predictions_list, pos_label='funny')
     f1 = f1_score(labels_list, predictions_list, pos_label='funny')
 
-    result_filename = f'{run_args["dataset_name"]}_scores.csv'
+    result_path = f'Results/{run_args["model_name"]}'
+    os.makedirs(result_path, exist_ok=True)
+
+    result_filename = f'{result_path}/{run_args["train_dataset"]}_scores.csv'
     write_header = False if os.path.isfile(result_filename) else True
 
     with open(result_filename, 'a') as csvfile:
-        results_dict = {
-            'model': model_name,
-            'dataset': run_args['dataset_name'],
-            'epoch': run_args['epoch'],
-            'batch_size': run_args['batch_size'],
-            'learning_rate': run_args['learning_rate'],
-            'seed': run_args['seed'],
+        metric_dict = {
             'accuracy': accuracy,
             'precision': precision,
             'recall': recall,
-            'f1': f1
-        }
+            'f1': f1}
 
-        writer = csv.DictWriter(csvfile,
-                                fieldnames=['model', 'dataset',
-                                            'epoch', 'batch_size', 'learning_rate',
-                                            'seed', 'accuracy', 'precision',
-                                            'recall', 'f1'])
+        merged_results_dict = {**run_args, **metric_dict}
+        # results_dict = {
+        #     'model': run_args["model_name"],
+        #     'train_dataset': run_args['train_dataset'],
+        #     'evaluate_dataset': run_args['evaluate_dataset'],
+        #     'epoch': run_args['epoch'],
+        #     'batch_size': run_args['batch_size'],
+        #     'learning_rate': run_args['learning_rate'],
+        #     'seed': run_args['seed'],
+        #     'accuracy': accuracy,
+        #     'precision': precision,
+        #     'recall': recall,
+        #     'f1': f1
+        # }
+
+        writer = csv.DictWriter(csvfile, fieldnames=list(merged_results_dict.keys()))
+        # fieldnames=['model', 'train_dataset', 'evaluate_dataset',
+        #             'epoch', 'batch_size', 'learning_rate',
+        #             'seed', 'accuracy', 'precision',
+        #             'recall', 'f1'])
         if write_header:
             writer.writeheader()
-        writer.writerow(results_dict)
+        writer.writerow(merged_results_dict)
 
     print(report)
-    print(results_dict)
+    print(merged_results_dict)
     print('*******************************')
 
-    with open(f'{run_args["dataset_name"]}_reports.txt', 'a') as report_file:
-        report_file.write(f'model name: {model_name}\n')
-        report_file.write(f'dataset name: {run_args["dataset_name"]}\n')
+    with open(f'{result_path}/{run_args["train_dataset"]}_reports.txt', 'a') as report_file:
+        report_file.write(f'model name: {run_args["model_name"]}\n')
+        if run_args["train_dataset"]:
+            report_file.write(f'train dataset: {run_args["train_dataset"]}\n')
+        if run_args["evaluate_dataset"]:
+            report_file.write(f'evaluate dataset: {run_args["evaluate_dataset"]}\n')
         report_file.write(report)
         report_file.write('\n*************\n')
 
 
 if __name__ == "__main__":
-    evaluate()
+    # Load the model and tokenizer
+    parser = HfArgumentParser((FlanTrainingArguments, FlanEvaluationArguments))
+    data_args = parser.parse_args_into_dataclasses()[1]
+
+    for model_id in data_args.models_id:
+        # MODEL_ID = "morturr/flan-t5-base-amazon-text-classification"
+        MODEL_ID = model_id
+
+        # hf_access_token = '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'
+
+        model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)  # , token=hf_access_token)
+        model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
+
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+        evaluate()
