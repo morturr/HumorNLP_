@@ -65,6 +65,9 @@ def classify(texts_to_classify: List[str]) -> List[Tuple[str, float]]:
     )  # Move to CPU for numpy conversion if needed
     confidences = confidences.cpu().numpy()  # Same here
 
+    # # TODO: remove this later, only to check flan logits
+    # print('*** predicted classes ***')
+    # print(f'type = {type(predicted_classes)}\n value = {predicted_classes}')
     # Map predicted class IDs to labels
     predicted_labels = [id2label[class_id] for class_id in predicted_classes]
 
@@ -79,8 +82,8 @@ def evaluate():
 
     model_name = MODEL_ID[MODEL_ID.index('morturr/') + len('morturr/'):]
 
-    # Heuristic to find the trained dataset in model name
-    # PAY ATTENTION TO IT!
+    # TODO: Heuristic to find the trained dataset in model name
+    # TODO: PAY ATTENTION TO IT!
     trained_dataset = [name for name in DATASETS if name in model_name][0]
     model_seed = int(MODEL_ID[MODEL_ID.index('seed-') + len('seed-'):])
 
@@ -95,7 +98,8 @@ def evaluate():
 
         dataset = load_dataset(dataset_name=eval_dataset_name,
                                percent=data_args.eval_samples_percent,
-                               data_file_path=data_args.test_file_path)
+                               data_file_path=data_args.test_file_path,
+                               add_instruction=data_args.add_instruction_test)
 
         print_cur_time(f'***** Evaluate model: {MODEL_ID} on dataset: {eval_dataset_name} *****')
         predictions_list, labels_list = [], []
@@ -233,10 +237,9 @@ if __name__ == "__main__":
         # MODEL_ID = "morturr/flan-t5-base-amazon-text-classification"
         MODEL_ID = model_id
 
-        # hf_access_token = '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'
-
-        model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)  # , token=hf_access_token)
+        model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID,
+                                                                   cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/")
         model.to("cuda") if torch.cuda.is_available() else model.to("cpu")
 
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/")
         evaluate()

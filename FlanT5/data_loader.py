@@ -8,12 +8,17 @@ from sklearn.model_selection import KFold, StratifiedKFold
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # DATASET_NAME = 'yelp'
 DATASET_FIXED_SIZE = 19000
+INSTRUCTION = 'Read the following text and classify it as funny or not funny. Generate only ONE word, Yes for funny, No' \
+              'for not funny\n\n'
 
 label2id = {"not funny": 0, "funny": 1}
+humorous2id = {"not humorous": 0, "humorous": 1}
 id2label = {id: label for label, id in label2id.items()}
+id2humorous = {id: label for label, id in humorous2id.items()}
 
 
-def load_dataset(dataset_name='amazon', percent=None, data_file_path=None) -> DatasetDict:
+def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
+                 add_instruction: bool = False) -> DatasetDict:
     """Load dataset."""
     if not data_file_path:
         data_file_path = ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
@@ -22,11 +27,15 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None) -> Da
 
     dataset_pandas = pd.read_csv(data_file_path)
 
-    if percent and type(percent) is int and percent <= 100:
+    if percent and type(percent) is float and percent <= 100:
         samples_count = int(len(dataset_pandas) * percent / 100)
         dataset_pandas = dataset_pandas.iloc[:samples_count]
 
     dataset_pandas["text"] = dataset_pandas["text"].astype(str)
+
+    if add_instruction:
+        dataset_pandas["text"] = dataset_pandas["text"].apply(lambda s: INSTRUCTION + s)
+
     dataset = Dataset.from_pandas(dataset_pandas)
     # 70% train, 30% test + validation
     dataset = dataset.class_encode_column("label")
@@ -102,7 +111,8 @@ def load_LOO_datasets(datasets):
         test = trainval_test['test']
 
         # Divide each of train, valid by number of dataset for training (len(datasets)-1)
-        todrop_train = train_valid['train'].train_test_split(test_size=DATA_PERCENT, seed=42, stratify_by_column='label')
+        todrop_train = train_valid['train'].train_test_split(test_size=DATA_PERCENT, seed=42,
+                                                             stratify_by_column='label')
         train = todrop_train['test']
         todrop_val = train_valid['test'].train_test_split(test_size=DATA_PERCENT, seed=42, stratify_by_column='label')
         val = todrop_val['test']
@@ -122,7 +132,7 @@ def load_cv_dataset(num_of_split=5, dataset_name='amazon', percent=None) -> pand
         ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
     )
 
-    if percent and type(percent) is int and percent <= 100:
+    if percent and type(percent) is float and percent <= 100:
         samples_count = int(len(dataset_pandas) * percent / 100)
         dataset_pandas = dataset_pandas.iloc[:samples_count]
 
@@ -138,31 +148,84 @@ def load_cv_dataset(num_of_split=5, dataset_name='amazon', percent=None) -> pand
     return train, kf
 
 
-def load_instruction_dataset(model_type: str = "AutoModelForSequenceClassification",
-                             dataset_name='amazon') -> DatasetDict:
-    """Load dataset for instruction fine tuning."""
-    dataset_pandas = pd.read_csv(
-        ROOT_DIR + f"/Data/new_humor_datasets/temp_run/{dataset_name}/data.csv",
-        # header=None,
-        # names=["id", "bert_sentence", "t5_sentence", "target", "label"],
-        # names=["label", "text"],
-    )
-    dataset_pandas = dataset_pandas.iloc[:10]
+def load_instruction_dataset(dataset_name='amazon', percent=None, instruction_version=0) -> DatasetDict:
+    """Load dataset."""
 
-    dataset_pandas["t5_sentence"] = dataset_pandas["t5_sentence"].astype(str)
-    dataset_pandas["t5_sentence"] = 'Determine if the following text is funny.\nTEXT: ' + \
-                                    dataset_pandas["t5_sentence"].astype(str) + \
-                                    '\nOPTIONS:\n-funny\n-not funny'
+    dataset_pandas = pd.read_csv(ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv")
+
+    if percent and type(percent) is float and percent <= 100:
+        samples_count = int(len(dataset_pandas) * percent / 100)
+        dataset_pandas = dataset_pandas.iloc[:samples_count]
+
+    dataset_pandas["text"] = dataset_pandas["text"].astype(str)
+
+    def create_instruction(version_idx):
+        INSTRUCTION_VERSIONS = [
+            "Given the following text, please determine if it should be classified as funny or not funny."
+            " Base your classification on humor elements such as wit, irony, absurdity, or comedic timing.",
+
+            "Analyze the text below and decide if it is funny or not funny. Consider factors like wordplay,"
+            " jokes, puns, sarcasm, or any other comedic techniques."
+            " Clearly label the text as 'Funny' or 'Not Funny'.",
+
+            "Does the following text exhibit characteristics of humor, such as being witty, sarcastic, or absurd?"
+            " Respond with 'Funny' for yes and 'Not Funny' for no.",
+
+            "Read the text provided and assess its humor potential. Would it likely make someone laugh or smile?"
+            " Classify the text as either 'Funny' or 'Not Funny'.",
+
+            "Imagine someone telling this text as a joke or an amusing story."
+            " In this context, would you find it funny? Categorize the text as 'Funny' or 'Not Funny'.",
+
+            "Consider the emotional response the text is likely to provoke."
+            " If it tends to make people laugh or find it amusing, label it as 'Funny'."
+            " If it does not, label it as 'Not Funny'."
+        ]
+
+        # text_input_format = "Below is an instruction that describes a text classification task.\n" \
+        #                     "### Instruction: Analyze the following text and classify whether it is humorous or not.\n" \
+        #                     "### Input: {text}\n" \
+        #                     "### Output: "
+        if version_idx is not None:
+            version_text = INSTRUCTION_VERSIONS[version_idx]
+
+            text_input_format = "Below is an instruction that describes a sentiment analysis task.\n\n" \
+                     "### Instruction:\n" + version_text + "\n\n### Input:\n{text}\n\n### Response:\n"
+
+        else:
+            text_input_format = "Below is an instruction that describes a text classification task.\n\n" \
+                                "### Instruction:\nAnalyze the following text and classify whether it is funny or not." \
+                                " If it is funny output Yes, and if it isn't funny output No.\n\n" \
+                                "### Input:\n{text}\n\n" \
+                                "### Response:\n"
+
+        def apply_to_row(row):
+            return text_input_format.format(text=row['text'])  # , label=id2humorous[row['label']])
+            # return text_to_model_format.format(text=row['text'])
+
+        return apply_to_row
+
+    def add_response(row):
+        output = 'Yes' if row['label'] == 1 else 'No'
+        row['instruction'] = row['instruction'] + output
+        # row['instruction'] = row['instruction'] + id2humorous[row['label']]
+        return row
+
+    dataset_pandas["instruction"] = dataset_pandas.apply(create_instruction(instruction_version), axis=1)
 
     dataset = Dataset.from_pandas(dataset_pandas)
-    # dataset = dataset.shuffle(seed=42)
     # 70% train, 30% test + validation
-    train_testval = dataset.train_test_split(test_size=0.3)
+    dataset = dataset.class_encode_column("label")
+    train_testval = dataset.train_test_split(test_size=0.25, seed=42, stratify_by_column='label')
     # Split the 30% test + valid in half test, half valid
-    test_valid = train_testval['test'].train_test_split(test_size=0.5)
+    test_valid = train_testval['test'].train_test_split(test_size=0.4, seed=42, stratify_by_column='label')
+
+    train = train_testval['train']
+    train = train.map(add_response)
+
     # gather everyone if you want to have a single DatasetDict
     dataset = DatasetDict({
-        'train': train_testval['train'],
+        'train': train,
         'test': test_valid['test'],
         'val': test_valid['train']})
 
@@ -172,5 +235,12 @@ def load_instruction_dataset(model_type: str = "AutoModelForSequenceClassificati
 
 
 if __name__ == "__main__":
-    load_LOO_datasets(['amazon', 'headlines', 'yelp_reviews'], 'yelp_reviews')
+    dataset = load_instruction_dataset('headlines', percent=0.1)
+    for split in ['train', 'test']:
+        print(f'split = {split}')
+        for sample in dataset[split]:
+            print(sample['instruction'])
+            print(sample['label'])
+
+    # load_dataset(add_instruction=False)
     pass

@@ -12,9 +12,10 @@ class FlanTrainingArguments:
     batch_sizes: Optional[List[int]] = field(default_factory=lambda: [4, 8, 16])
     learning_rates: Optional[List[float]] = field(default_factory=lambda: [5e-5, 1e-5, 1e-6])
     seeds: Optional[List[int]] = field(default_factory=lambda: [5, 19, 28, 42])
-    samples_percent: Optional[int] = field(default=None)
+    samples_percent: Optional[float] = field(default=None)
     data_file_path: Optional[str] = field(default=None)
     task_type: Optional[str] = field(default='TRAIN')
+    add_instruction: Optional[bool] = field(default=False)
 
 
 @dataclass
@@ -23,5 +24,6 @@ class FlanEvaluationArguments:
     datasets: Optional[List[str]] = field(default_factory=lambda: ['amazon', 'dadjokes', 'headlines',
                                                                    'one_liners', 'yelp_reviews'])
     test_file_path: Optional[str] = field(default=None)
-    eval_samples_percent: Optional[int] = field(default=None)
+    eval_samples_percent: Optional[float] = field(default=None)
     create_report_files: Optional[bool] = field(default=False)
+    add_instruction_test: Optional[bool] = field(default=False)

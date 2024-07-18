@@ -1,3 +1,5 @@
+# code template was taken from https://github.com/VanekPetr/flan-t5-text-classifier/tree/main
+
 import nltk
 import numpy as np
 from huggingface_hub import HfFolder
@@ -33,7 +35,10 @@ import wandb
 
 import torch
 
-wandb.init(mode='disabled')
+# wandb.init(mode='disabled')
+
+# TODO: Read from file
+hf_access_token = None
 
 parser = HfArgumentParser((FlanTrainingArguments, FlanEvaluationArguments))
 data_args = parser.parse_args_into_dataclasses()[0]
@@ -61,7 +66,9 @@ training_args = TrainingArguments(
     push_to_hub=True,
     hub_strategy="every_save",
     hub_model_id=REPOSITORY_ID,
-    hub_token=HfFolder.get_token(),
+    # TODO: temporary because HfFolder token is None
+    # hub_token=HfFolder.get_token(),
+    hub_token=hf_access_token,
     seed=42,
     # bf16=True, # ADDED ON Q-LORA
 )
@@ -70,11 +77,28 @@ config = AutoConfig.from_pretrained(
     data_args.model_name, num_labels=len(label2id), id2label=id2label, label2id=label2id
 )
 # model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID, config=config) # maybe because of auto?
-tokenizer = AutoTokenizer.from_pretrained(data_args.model_name)
+tokenizer = AutoTokenizer.from_pretrained(data_args.model_name,
+                                          cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Models/")
+
+# TODO: remove this after, only for checking on amazon
+# Add special tokens to the tokenizer
+special_tokens_dict = {'additional_special_tokens': ['[SEP]']}
+tokenizer.add_special_tokens(special_tokens_dict)
 
 
-def init_model():
-    return AutoModelForSequenceClassification.from_pretrained(data_args.model_name, config=config)
+def init_model_wrapper(tokenizer_len):
+    def init_model():
+        # return AutoModelForSequenceClassification.from_pretrained(data_args.model_name, config=config,
+        #                                                           cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Models/",
+        #                                                           token=hf_access_token)
+        model = AutoModelForSequenceClassification.from_pretrained(data_args.model_name, config=config,
+                                                                  cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Models/",
+                                                                  token=hf_access_token)
+        # TODO: remove this after, only for checking on amazon
+        # Resize model embeddings if necessary
+        model.resize_token_embeddings(tokenizer_len)
+        return model
+    return init_model
 
 
 def tokenize_function(examples) -> dict:
@@ -102,7 +126,8 @@ def train() -> None:
     """
     print(f'***** Train model: {data_args.model_name} on dataset: {data_args.dataset_name} *****')
     dataset = load_dataset(dataset_name=data_args.dataset_name, percent=data_args.samples_percent,
-                           data_file_path=data_args.data_file_path)
+                           data_file_path=data_args.data_file_path,
+                           add_instruction=data_args.add_instruction)
     tokenized_datasets = dataset.map(tokenize_function, batched=True)
 
     # # Configuring LoRA
@@ -160,14 +185,17 @@ def train() -> None:
             'seed': seed,
             'output_dir': REPOSITORY_ID,
             'hub_model_id': REPOSITORY_ID,
-            'hub_token': HfFolder.get_token()
+            'hub_token': hf_access_token
+            # 'hub_token': HfFolder.get_token()
         }
 
         update_training_arguments(**training_args_update)
 
         trainer = Trainer(
             # model=model,
-            model_init=init_model,
+            # TODO: change it after, only for amazon check
+            # model_init=init_model,
+            model_init=init_model_wrapper(len(tokenizer)),
             args=training_args,
             train_dataset=tokenized_datasets["train"],
             eval_dataset=tokenized_datasets["val"],
