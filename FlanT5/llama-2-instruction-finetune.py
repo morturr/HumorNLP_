@@ -27,7 +27,6 @@ from transformers import (
     LlamaConfig,
 )
 
-
 from peft import LoraConfig, TaskType
 from trl import SFTTrainer
 from data_loader import load_instruction_dataset
@@ -40,7 +39,6 @@ import os
 
 from datetime import datetime
 
-
 dataset_name = "headlines"
 # dataset = load_dataset(dataset_name, split="train")
 
@@ -48,8 +46,33 @@ if len(sys.argv) > 1:
     instruction_version = sys.argv[1]
 else:
     instruction_version = None
-dataset = load_instruction_dataset(dataset_name, percent=0.1, instruction_version=instruction_version)
+dataset = load_instruction_dataset(dataset_name, percent=10, instruction_version=instruction_version)
 
+
+def cuda_memory_status():
+    torch.cuda.empty_cache()
+    total = torch.cuda.get_device_properties(0).total_memory
+    reserved = torch.cuda.memory_reserved(0)
+    allocated = torch.cuda.memory_allocated(0)
+    free_memory = reserved - allocated  # free inside reserved
+    print('&& Cuda Memory Info &&')
+    print(f'total memory = {total}')
+    print(f'reserved memory = {reserved}')
+    print(f'allocated memory = {allocated}')
+    print(f'free memory = {free_memory}')
+
+
+def print_run_info():
+    info_msgs = ['****',
+                 'Trying padding side right for training, and padding side left for inference',
+                 'Batch size: 4 for training, 2 for inference',
+                 '****']
+
+    print('\n'.join(info_msgs))
+
+
+cuda_memory_status()
+print_run_info()
 
 # def train_flan():
 #     base_model_name = "google/flan-t5-base"
@@ -135,23 +158,30 @@ dataset = load_instruction_dataset(dataset_name, percent=0.1, instruction_versio
 #     output_dir = os.path.join(output_dir, "final_checkpoint")
 #     trainer.model.save_pretrained(output_dir)
 
+
 def train_llama_versions():
     global dataset, dataset_name
 
     NUM_OF_VERSIONS = 6
 
-    for version_id in range(NUM_OF_VERSIONS):
-        dataset = load_instruction_dataset(dataset_name, percent=0.07, instruction_version=version_id)
-        output_dir = f"Llama-2-7b-hf-{dataset_name}-ver-{version_id}-" \
-                                f"{datetime.now().date()}"
-        # train_llama(output_dir)
+    # for version_id in range(NUM_OF_VERSIONS):
+    version_id = 2
+    dataset = load_instruction_dataset(dataset_name, percent=0.1, instruction_version=version_id)
+    output_dir = f"Llama-2-7b-hf-{dataset_name}-ver-{version_id}-" \
+                 f"{datetime.now().date()}"
+    train_llama(output_dir)
+
+    # Empty cache after each model training
+    torch.cuda.empty_cache()
 
 
 def train_llama(output_dir=None):
     base_model_name = "meta-llama/Llama-2-7b-hf"
     print(f'^^^^  Training {base_model_name} on {dataset_name} ^^^^')
+    print(f'^^^ output dir = {output_dir} ^^^')
     num_of_epochs = 10
-    print(f'^^^ epochs = {num_of_epochs} train size = {len(dataset["train"])}')
+    max_steps = 20
+    print(f'^^^ epochs = {num_of_epochs} train size = {len(dataset["train"])} max_steps = {max_steps}')
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -161,7 +191,8 @@ def train_llama(output_dir=None):
 
     device_map = {"": 0}
 
-    hf_access_token = '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'
+    # TODO: add my token
+    hf_access_token = None
 
     # # TODO: remove this. Trying to train Llama in a similar manner to Flan (using labels)
     # id2yesno = {0: "No", 1: "Yes"}
@@ -202,7 +233,7 @@ def train_llama(output_dir=None):
 
     if not output_dir:
         output_dir = f"{base_model_name.split('/')[1]}-{dataset_name}-" \
-                                f"{datetime.now().date()}"
+                     f"{datetime.now().date()}"
 
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -210,7 +241,7 @@ def train_llama(output_dir=None):
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
         logging_steps=10,
-        max_steps=500,
+        max_steps=max_steps,
         report_to='none',
         num_train_epochs=num_of_epochs,
     )
@@ -230,6 +261,9 @@ def train_llama(output_dir=None):
     #         labels, predictions, average="binary"
     #     )
     #     return {"precision": precision, "recall": recall, "f1": f1}
+    # Change padding side to right for training
+    tokenizer.padding_side = "right"
+    assert tokenizer.padding_side == "right"
 
     trainer = SFTTrainer(
         model=base_model,
@@ -252,7 +286,13 @@ def train_llama(output_dir=None):
 
     # predict on the test set
     # model = AutoPeftModelForCausalLM.from_pretrained(output_dir, device_map=device_map, torch_dtype=torch.bfloat16)
-    for split in ['train', 'test']:
+
+    # Change padding side to left for inference
+    tokenizer.padding_side = "left"
+    assert tokenizer.padding_side == "left"
+
+    # for split in ['train', 'test']:
+    for split in ['test']:
         print(f'@@@ Evaluating on {split} split. Examples count = {len(dataset[split])} @@@')
 
         # if split is train, remove the answer of output
@@ -265,21 +305,40 @@ def train_llama(output_dir=None):
             row['instruction'] = instruction[:instruction.index(terminator) + len(terminator)]
             return row
 
+        def get_response(row):
+            # output = 'Yes' if row['label'] == 1 else 'No'
+            # row['instruction'] = row['instruction'] + output
+            instruction = row['instruction']
+            terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
+            # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
+            row['instruction'] = instruction[instruction.index(terminator) + len(terminator):]
+            return row
+
+        true_labels = dataset[split].map(get_response)
+
         if split == 'train':
+            train = dataset[split]
             dataset[split] = dataset[split].map(remove_response)
 
+        true_labels = [true_labels[i]['instruction'] for i in range(len(true_labels))]
         texts = [dataset[split][i]['instruction'] for i in range(len(dataset[split]))]
-        inputs = tokenizer(texts, return_tensors="pt", padding=True).to("cuda")
-        outputs = base_model.generate(input_ids=inputs["input_ids"].to("cuda"), attention_mask=inputs["attention_mask"],
-                                 max_new_tokens=50, pad_token_id=tokenizer.eos_token_id)
 
-        responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
+        batch_size = 4
+        all_responses = []
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i: i + batch_size]
+            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
+            outputs = base_model.generate(input_ids=inputs["input_ids"].to("cuda"), attention_mask=inputs["attention_mask"],
+                                          max_new_tokens=50, pad_token_id=tokenizer.eos_token_id)
+
+            responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
+            all_responses.extend(responses)
 
         with open(f'{output_dir}/instruction_results.txt', 'a') as f:
             f.write(f'@@@ {split} split results')
-            for i in range(len(responses)):
-                f.write(f'*** {i} ***\ntext:\n{texts[i]}\nmodel response:\n{responses[i]}\n\n')
-                print(f'*** {i} ***\ntext:\n{texts[i]}\nmodel response:\n{responses[i]}\n\n')
+            for i in range(len(all_responses)):
+                f.write(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
+                print(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
 
         pass
 
@@ -292,7 +351,8 @@ def load_llama():
 
     device_map = {"": 0}
 
-    hf_access_token = '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'
+    # TODO: add my token
+    hf_access_token = None
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -310,7 +370,7 @@ def load_llama():
         cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
         # config=AutoConfig.from_pretrained(
         #     trained_model_name, num_labels=len(id2yesno), id2label=id2yesno, label2id=yesno2id
-        )
+    )
 
     trained_model.config.use_cache = False
 
@@ -344,7 +404,6 @@ def load_llama():
     logits = outputs.logits
     probs = torch.nn.functional.softmax(logits, dim=-1)
 
-
     # Get the top class and the corresponding probability (certainty) for each input text
     confidences, predicted_classes = torch.max(probs, dim=1)
     predicted_classes = (
@@ -371,6 +430,6 @@ def load_llama():
 
 
 if __name__ == '__main__':
-    # train_llama()
+    train_llama()
     # load_llama()
-    train_llama_versions()
+    # train_llama_versions()

@@ -153,7 +153,8 @@ def load_instruction_dataset(dataset_name='amazon', percent=None, instruction_ve
 
     dataset_pandas = pd.read_csv(ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv")
 
-    if percent and type(percent) is float and percent <= 100:
+    if percent and (type(percent) is float or type(percent) is int) \
+            and percent <= 100:
         samples_count = int(len(dataset_pandas) * percent / 100)
         dataset_pandas = dataset_pandas.iloc[:samples_count]
 
@@ -190,7 +191,7 @@ def load_instruction_dataset(dataset_name='amazon', percent=None, instruction_ve
             version_text = INSTRUCTION_VERSIONS[version_idx]
 
             text_input_format = "Below is an instruction that describes a sentiment analysis task.\n\n" \
-                     "### Instruction:\n" + version_text + "\n\n### Input:\n{text}\n\n### Response:\n"
+                                "### Instruction:\n" + version_text + "\n\n### Input:\n{text}\n\n### Response:\n"
 
         else:
             text_input_format = "Below is an instruction that describes a text classification task.\n\n" \

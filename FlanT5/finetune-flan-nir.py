@@ -13,7 +13,7 @@ import argparse
 # wandb.login(key=WANDB_KEY)
 import torch
 import json
-import tensor_parallel as tp
+# import tensor_parallel as tp
 
 
 FLAN_PROMPT =  "You are given a SITUATION and possible answers for the situation in ANSWERS. Your task is to choose the best" \
@@ -25,13 +25,15 @@ FLAN_PROMPT =  "You are given a SITUATION and possible answers for the situation
 def load_test_data_by_name(name):
     windows_path = f"test_sets\\{name}_-1_samples_test.jsonl"
     unix_path = f"DynamicDream/test_sets/{name}_-1_samples_test.jsonl"
-    try:
-        dict_dataset = load_test_dataset(windows_path)
-    except:
-        dict_dataset = load_test_dataset(unix_path)
+
+    # TODO: Mor's changes:
+    mor_path = "codah_-1_samples_test.jsonl"
+    dict_dataset = load_test_dataset(mor_path)
+    # try:
+    #     dict_dataset = load_test_dataset(windows_path)
+    # except:
+    #     dict_dataset = load_test_dataset(unix_path)
     return dict_dataset
-
-
 
 
 def load_test_dataset(path):
@@ -40,7 +42,6 @@ def load_test_dataset(path):
         for line in f.readlines():
             all_dicts.append(json.loads(line))
     return all_dicts
-
 
 
 def get_all_questions_with_options(dict_dataset, is_flan = False):
@@ -52,6 +53,7 @@ def get_all_questions_with_options(dict_dataset, is_flan = False):
 
     return [f"{d['question']} {d['mcoptions']}" for d in dict_dataset]
 
+
 def write_elaborations_to_jsonl(dict_dataset, elaborations,save_path):
     with open(save_path, "w") as f:
         for i,dict in enumerate(dict_dataset):
@@ -59,9 +61,6 @@ def write_elaborations_to_jsonl(dict_dataset, elaborations,save_path):
             json.dump(dict, f)
             if i != len(dict_dataset) - 1:
                 f.write("\n")
-
-
-
 
 
 class CreateLoadDataset:
@@ -87,7 +86,7 @@ class CreateLoadDataset:
     def read_objects_from_jsonlines(self):
         #objects = []
         with jsonlines.open(self.file_path) as reader:
-            return [o for o in reader]
+            return [o for o in reader][:10]
 
     def turn_to_dataset(self):
         return datasets.Dataset.from_dict(self.turn_to_single_dict())
@@ -108,26 +107,27 @@ class CreateLoadDataset:
             yield object
 
 
-
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--raw_data_path", dest="raw_data_path", type=str, default="samples\\annotated_data.jsonl")
+    # parser.add_argument("--raw_data_path", dest="raw_data_path", type=str, default="samples\\annotated_data.jsonl")
+    parser.add_argument("--raw_data_path", dest="raw_data_path", type=str, default="codah_-1_samples_test.jsonl")
     parser.add_argument("--dataset_save_dir", dest="dataset_save_dir", type=str, default="datasets\\annotated_dataset.hf")
     parser.add_argument("--model_save_dir", dest="model_save_dir", type=str, default="models\\")
     parser.add_argument("--inference_test_set", dest="inference_test_set", type=str, default="piqa")
-    parser.add_argument("--pretrained_model_path", dest="pretrained_model_path", type=str, default="models\\t5_small")
-    parser.add_argument("--model_name", dest="model_name", type=str, default="tf-small")
+    parser.add_argument("--pretrained_model_path", dest="pretrained_model_path", type=str, default="models\\_google_flan-t5-xl_10")
+    parser.add_argument("--model_name", dest="model_name", type=str, default="google/flan-t5-xl")
     parser.add_argument("--test_save_dir", dest="test_save_dir", type=str, default="test_sets\\")
-    parser.add_argument("--run_train", dest="run_train", action= "store_true")
-    parser.add_argument("--run_inference", dest="run_inference", action= "store_true")
-    parser.add_argument("--is_flan", dest="is_flan", action= "store_true")
+    parser.add_argument("--run_train", dest="run_train", action= "store_true", default=False)
+    parser.add_argument("--run_inference", dest="run_inference", action= "store_true", default=True)
+    parser.add_argument("--is_flan", dest="is_flan", action= "store_true", default=True)
     parser.add_argument("--inference_batch_size", dest="inference_batch_size", type=int, default=32)
     parser.add_argument("--train_epochs", dest="train_epochs", type=int, default=10)
-    parser.add_argument("--inference_size", dest="inference_size", type=int, default=-1)
+    parser.add_argument("--inference_size", dest="inference_size", type=int, default=5)
     args = parser.parse_args()
 
+    # TODO: add token
+    mor_hf_token = None
     is_flan = args.is_flan
     run_train = args.run_train
     if run_train:
@@ -141,7 +141,8 @@ if __name__ == "__main__":
 
         #loading the model
         model_name = args.model_name
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, token=mor_hf_token) #,
+                                                  # cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Cache/")
 
         def preprocess_function(examples):
             options = [examples["question"], examples["elaboration"], examples["mcoptions"]]
@@ -231,11 +232,12 @@ if __name__ == "__main__":
             push_to_hub=False,
             report_to = "none"
         )
-        nir = 1
+
         #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         #device_ids = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
         #print(f"the device ids are {device_ids}")
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name) #,
+                                                      # cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Models/")
         #model - tp.tensor_parallel(model, ["cuda:0", "cuda:1"])
         # model = torch.nn.DataParallel(model, device_ids=device_ids)
        # model = model.to(device)
@@ -264,7 +266,7 @@ if __name__ == "__main__":
 
     #inference
     run_inference = args.run_inference
-    model_path  = args.pretrained_model_path
+    model_path = args.pretrained_model_path
     ind = 0
     print(model_path)
     if model_path.find("s/") != -1:
@@ -273,7 +275,11 @@ if __name__ == "__main__":
         ind = model_path.find("\\") + 2
     pretrained_model_name = model_path[ind:]
     if run_inference:
+        # TODO: Mor changes. didn't want to create another file
+        # CLdataset_test = CreateLoadDataset(args.raw_data_path, args.dataset_save_dir)
+        # test_dataset = CLdataset_test.save_or_load_dataset()
         test_dataset = load_test_data_by_name(args.inference_test_set)
+
         if args.inference_size != -1:
             test_dataset = test_dataset[:args.inference_size]
         text_inputs = get_all_questions_with_options(test_dataset, is_flan=is_flan)
