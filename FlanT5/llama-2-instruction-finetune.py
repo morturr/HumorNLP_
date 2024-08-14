@@ -46,6 +46,7 @@ if len(sys.argv) > 1:
     instruction_version = sys.argv[1]
 else:
     instruction_version = None
+
 dataset = load_instruction_dataset(dataset_name, percent=10, instruction_version=instruction_version)
 
 
@@ -62,17 +63,19 @@ def cuda_memory_status():
     print(f'free memory = {free_memory}')
 
 
-def print_run_info():
+def print_run_info(**kwargs):
     info_msgs = ['****',
                  'Trying padding side right for training, and padding side left for inference',
-                 'Batch size: 4 for training, 2 for inference',
-                 '****']
+                 'Medium amount of data (10%), many steps, inference on test to see if it gets']
+
+    for key, value in kwargs.items():
+        info_msgs.append(f'{key}: {value}')
+    info_msgs.append('****')
 
     print('\n'.join(info_msgs))
 
 
-cuda_memory_status()
-print_run_info()
+# cuda_memory_status()
 
 # def train_flan():
 #     base_model_name = "google/flan-t5-base"
@@ -179,9 +182,15 @@ def train_llama(output_dir=None):
     base_model_name = "meta-llama/Llama-2-7b-hf"
     print(f'^^^^  Training {base_model_name} on {dataset_name} ^^^^')
     print(f'^^^ output dir = {output_dir} ^^^')
-    num_of_epochs = 10
-    max_steps = 20
-    print(f'^^^ epochs = {num_of_epochs} train size = {len(dataset["train"])} max_steps = {max_steps}')
+    run_args = {'num_of_epochs': 50,
+                'max_steps': 50,
+                'train_size': len(dataset["train"]),
+                'max_new_tokens': 5,
+                'train_batch_size': 4,
+                'inference_batch_size': 4,
+                }
+
+    print_run_info(**run_args)
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -191,8 +200,7 @@ def train_llama(output_dir=None):
 
     device_map = {"": 0}
 
-    # TODO: add my token
-    hf_access_token = None
+    hf_access_token = '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'
 
     # # TODO: remove this. Trying to train Llama in a similar manner to Flan (using labels)
     # id2yesno = {0: "No", 1: "Yes"}
@@ -237,13 +245,13 @@ def train_llama(output_dir=None):
 
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=run_args['train_batch_size'],
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
         logging_steps=10,
-        max_steps=max_steps,
+        max_steps=run_args['max_steps'],
         report_to='none',
-        num_train_epochs=num_of_epochs,
+        num_train_epochs=run_args['num_of_epochs'],
     )
 
     max_seq_length = 512
@@ -308,28 +316,28 @@ def train_llama(output_dir=None):
         def get_response(row):
             # output = 'Yes' if row['label'] == 1 else 'No'
             # row['instruction'] = row['instruction'] + output
-            instruction = row['instruction']
-            terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
-            # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
-            row['instruction'] = instruction[instruction.index(terminator) + len(terminator):]
+            # instruction = row['instruction']
+            # terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
+            # # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
+            row['text label'] = 'Yes' if row['label'] == 1 else 'No'
+            # row['instruction'] = instruction[instruction.index(terminator) + len(terminator):]
             return row
 
         true_labels = dataset[split].map(get_response)
 
         if split == 'train':
-            train = dataset[split]
             dataset[split] = dataset[split].map(remove_response)
 
-        true_labels = [true_labels[i]['instruction'] for i in range(len(true_labels))]
+        true_labels = [true_labels[i]['text label'] for i in range(len(true_labels))]
         texts = [dataset[split][i]['instruction'] for i in range(len(dataset[split]))]
 
-        batch_size = 4
+        inference_batch_size = run_args['inference_batch_size']
         all_responses = []
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i: i + batch_size]
+        for i in range(0, len(texts), inference_batch_size):
+            batch_texts = texts[i: i + inference_batch_size]
             inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
             outputs = base_model.generate(input_ids=inputs["input_ids"].to("cuda"), attention_mask=inputs["attention_mask"],
-                                          max_new_tokens=50, pad_token_id=tokenizer.eos_token_id)
+                                          max_new_tokens=run_args['max_new_tokens'], pad_token_id=tokenizer.eos_token_id)
 
             responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
             all_responses.extend(responses)
@@ -351,8 +359,7 @@ def load_llama():
 
     device_map = {"": 0}
 
-    # TODO: add my token
-    hf_access_token = None
+    hf_access_token = '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'
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
