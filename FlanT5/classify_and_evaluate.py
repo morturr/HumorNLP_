@@ -126,7 +126,7 @@ def evaluate():
         predictions_list = [pair[0] for pair in predictions_list]
 
         if data_args.create_report_files:
-            create_report(labels_list, predictions_list, run_args)
+            create_report(labels_list, predictions_list, run_args, pos_label='funny')
         else:
             report = classification_report(labels_list, predictions_list)
             print(report)
@@ -164,18 +164,18 @@ def evaluate_with_cv(data_dict, run_args):
     predictions_list = [pair[0] for pair in predictions_list]
 
     if data_args.create_report_files:
-        create_report(labels_list, predictions_list, run_args)
+        create_report(labels_list, predictions_list, run_args, pos_label='funny')
     else:
         report = classification_report(labels_list, predictions_list)
         print(report)
 
 
-def create_report(labels_list, predictions_list, run_args):
+def create_report(labels_list, predictions_list, run_args, pos_label=1):
     report = classification_report(labels_list, predictions_list)
     accuracy = accuracy_score(labels_list, predictions_list)
-    precision = precision_score(labels_list, predictions_list, pos_label='funny')
-    recall = recall_score(labels_list, predictions_list, pos_label='funny')
-    f1 = f1_score(labels_list, predictions_list, pos_label='funny')
+    precision = precision_score(labels_list, predictions_list, pos_label=pos_label)
+    recall = recall_score(labels_list, predictions_list, pos_label=pos_label)
+    f1 = f1_score(labels_list, predictions_list, pos_label=pos_label)
 
     result_path = f'Results/{run_args["model_name"]}'
     os.makedirs(result_path, exist_ok=True)
