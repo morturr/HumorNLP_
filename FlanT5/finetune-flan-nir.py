@@ -15,12 +15,18 @@ import torch
 import json
 # import tensor_parallel as tp
 
+# TODO: Mor's changes:
+# FLAN_PROMPT =  "You are given a SITUATION and possible answers for the situation in ANSWERS. Your task is to choose the best" \
+#                "dimensions that will help you find the correct answer on the SITUATION. After you chose the dimensions, please " \
+#                "elaborate the scene on these dimensions. " \
+#                "Inputs: OPTIONAL_DIMENSIONS, SITUATION, ANSWERS Outputs: for each dimension, output [CHOSEN_DIMENSION]: [ELABORATION]"
+FLAN_PROMPT =  "You are given a TEXT. Your task is to examine the TEXT" \
+               "and classify it as funny or not funny. If the TEXT is funny, please " \
+               "output Yes, else output No." \
+               "Input: TEXT Output: Yes/No"
 
-FLAN_PROMPT =  "You are given a SITUATION and possible answers for the situation in ANSWERS. Your task is to choose the best" \
-               "dimensions that will help you find the correct answer on the SITUATION. After you chose the dimensions, please " \
-               "elaborate the scene on these dimensions. " \
-               "Inputs: OPTIONAL_DIMENSIONS, SITUATION, ANSWERS Outputs: for each dimension, output [CHOSEN_DIMENSION]: [ELABORATION]"
-
+import os
+# os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments'
 
 def load_test_data_by_name(name):
     windows_path = f"test_sets\\{name}_-1_samples_test.jsonl"
@@ -86,7 +92,7 @@ class CreateLoadDataset:
     def read_objects_from_jsonlines(self):
         #objects = []
         with jsonlines.open(self.file_path) as reader:
-            return [o for o in reader][:10]
+            return [o for o in reader]#[:10]
 
     def turn_to_dataset(self):
         return datasets.Dataset.from_dict(self.turn_to_single_dict())
@@ -111,14 +117,16 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     # parser.add_argument("--raw_data_path", dest="raw_data_path", type=str, default="samples\\annotated_data.jsonl")
-    parser.add_argument("--raw_data_path", dest="raw_data_path", type=str, default="codah_-1_samples_test.jsonl")
+    # parser.add_argument("--raw_data_path", dest="raw_data_path", type=str, default="codah_-1_samples_test.jsonl")
+    parser.add_argument("--raw_data_path", dest="raw_data_path", type=str,
+                        default="/cs/labs/dshahaf/mortur/HumorNLP_/Data/new_humor_datasets/balanced/one_liners/Json/train.jsonl")
     parser.add_argument("--dataset_save_dir", dest="dataset_save_dir", type=str, default="datasets\\annotated_dataset.hf")
     parser.add_argument("--model_save_dir", dest="model_save_dir", type=str, default="models\\")
     parser.add_argument("--inference_test_set", dest="inference_test_set", type=str, default="piqa")
     parser.add_argument("--pretrained_model_path", dest="pretrained_model_path", type=str, default="models\\_google_flan-t5-xl_10")
     parser.add_argument("--model_name", dest="model_name", type=str, default="google/flan-t5-xl")
     parser.add_argument("--test_save_dir", dest="test_save_dir", type=str, default="test_sets\\")
-    parser.add_argument("--run_train", dest="run_train", action= "store_true", default=False)
+    parser.add_argument("--run_train", dest="run_train", action= "store_true", default=True)
     parser.add_argument("--run_inference", dest="run_inference", action= "store_true", default=True)
     parser.add_argument("--is_flan", dest="is_flan", action= "store_true", default=True)
     parser.add_argument("--inference_batch_size", dest="inference_batch_size", type=int, default=32)
@@ -126,23 +134,37 @@ if __name__ == "__main__":
     parser.add_argument("--inference_size", dest="inference_size", type=int, default=5)
     args = parser.parse_args()
 
-    # TODO: add token
-    mor_hf_token = None
+    mor_hf_token = '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'
     is_flan = args.is_flan
     run_train = args.run_train
+
+
     if run_train:
         print("running training")
         raw_data_path = args.raw_data_path
         dataset_save_dir = args.dataset_save_dir
-        #creating or loading dataset
-        CLdataset = CreateLoadDataset(raw_data_path, dataset_save_dir)
-        dataset = CLdataset.save_or_load_dataset()
-        print(dataset)
+        # TODO Mor: creation of my dataset
+        with jsonlines.open(raw_data_path) as reader:
+            data_list = [o for o in reader][:20]
+
+        data_list = [sample['messages'] for sample in data_list]
+        list_of_dicts = []
+        for sample in data_list:
+            sample_dict = {}
+            sample_dict['input'] = sample[1]['content']
+            sample_dict['target'] = sample[2]['content']
+            list_of_dicts.append(sample_dict)
+
+        mor_dataset = datasets.Dataset.from_list(list_of_dicts)
+        # #creating or loading dataset
+        # CLdataset = CreateLoadDataset(raw_data_path, dataset_save_dir)
+        # dataset = CLdataset.save_or_load_dataset()
+        # print(dataset)
 
         #loading the model
         model_name = args.model_name
-        tokenizer = AutoTokenizer.from_pretrained(model_name, token=mor_hf_token) #,
-                                                  # cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Cache/")
+        tokenizer = AutoTokenizer.from_pretrained(model_name, token=mor_hf_token, #,
+                                                  cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Cache/")
 
         def preprocess_function(examples):
             options = [examples["question"], examples["elaboration"], examples["mcoptions"]]
@@ -155,6 +177,22 @@ if __name__ == "__main__":
             model_inputs = tokenizer(inputs, max_length = 1024, truncation = True)
 
             labels = tokenizer(text_target = targets, max_length=1024, truncation=True)
+            model_inputs["labels"] = labels["input_ids"]
+            return model_inputs
+
+        def flan_preprocess_mor(examples):
+            # inputs = examples[1]['content']
+            # targets = examples[2]['content']
+            # inputs = []
+            # targets = []
+            # for example in examples:
+            # example = examples['messages']
+            # inputs.append(example[1]['content'])
+            # targets.append(example[2]['content'])
+
+            model_inputs = tokenizer(examples['input'], max_length=1024, truncation=True)
+            # elaborated_inputs = [f"elaboration: {examples['elaboration'][i]}" for i in range(len("elaboration"))]
+            labels = tokenizer(text_target=examples['target'], max_length=1024, truncation=True)
             model_inputs["labels"] = labels["input_ids"]
             return model_inputs
 
@@ -191,9 +229,10 @@ if __name__ == "__main__":
 
         is_flan = args.is_flan
         if is_flan:
-            tokenized_dataset = dataset.map(flan_preprocess_with_prompt, batched=True)
+            # tokenized_dataset = mor_dataset.map(flan_preprocess_with_prompt, batched=True)
+            tokenized_dataset = mor_dataset.map(flan_preprocess_mor, batched=True)
         else:
-            tokenized_dataset = dataset.map(preprocess_function, batched=True)
+            tokenized_dataset = mor_dataset.map(preprocess_function, batched=True)
         #setting the data collator
         data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model = model_name, return_tensors="pt")
 
@@ -222,8 +261,8 @@ if __name__ == "__main__":
             output_dir=f"{model_name}_training",
             evaluation_strategy="no",
             learning_rate=2e-2,
-            per_device_train_batch_size=16,
-            per_device_eval_batch_size=16,
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
             weight_decay=0.01,
             save_total_limit=3,
             num_train_epochs=args.train_epochs,
@@ -236,8 +275,8 @@ if __name__ == "__main__":
         #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         #device_ids = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
         #print(f"the device ids are {device_ids}")
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name) #,
-                                                      # cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Models/")
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name,
+                                                      cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/FlanT5/Models/")
         #model - tp.tensor_parallel(model, ["cuda:0", "cuda:1"])
         # model = torch.nn.DataParallel(model, device_ids=device_ids)
        # model = model.to(device)
@@ -262,7 +301,12 @@ if __name__ == "__main__":
         model_save_path = f"{model_save_dir}_{model_name}_{args.train_epochs}"
         print(f"model save path: {model_save_path}")
         trainer.save_model(model_save_path)
+        trainer.model.push_to_hub()
 
+        # TODO Mor: my code to save
+        trainer.model.save_pretrained(model_save_path)
+        trainer.create_model_card()
+        trainer.push_to_hub(token=mor_hf_token)
 
     #inference
     run_inference = args.run_inference
@@ -278,12 +322,17 @@ if __name__ == "__main__":
         # TODO: Mor changes. didn't want to create another file
         # CLdataset_test = CreateLoadDataset(args.raw_data_path, args.dataset_save_dir)
         # test_dataset = CLdataset_test.save_or_load_dataset()
-        test_dataset = load_test_data_by_name(args.inference_test_set)
+        # test_dataset = load_test_data_by_name(args.inference_test_set)
+        file_path = '/cs/labs/dshahaf/mortur/HumorNLP_/Data/new_humor_datasets/balanced/{dataset}' \
+                    '/Json/test.jsonl'.format(dataset='one_liners')
 
+        with open(file_path, 'r') as file:
+            data = [json.loads(line) for line in file]
+        mor_test_dataset = [sample[1]['content'] for sample in data]
         if args.inference_size != -1:
-            test_dataset = test_dataset[:args.inference_size]
-        text_inputs = get_all_questions_with_options(test_dataset, is_flan=is_flan)
-        print(f"text_inputs are {text_inputs}")
+            mor_test_dataset = mor_test_dataset[:args.inference_size]
+        # text_inputs = get_all_questions_with_options(test_dataset, is_flan=is_flan)
+        # print(f"text_inputs are {text_inputs}")
         loaded_model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
         if torch.cuda.is_available():
             loaded_model.to(torch.device("cuda"))
@@ -324,11 +373,20 @@ if __name__ == "__main__":
 
 
         batch_size = args.inference_batch_size
-        elaborations = generate_and_decode(text_inputs, batch_size)
+        elaborations = generate_and_decode(mor_test_dataset, batch_size)
         print(pretrained_model_name)
+
+
         save_path = f"{args.test_save_dir}{args.inference_test_set}_{args.inference_size}_{pretrained_model_name}.jsonl"
 
-        write_elaborations_to_jsonl(test_dataset, elaborations, save_path)
+        # TODO Mor: my code to save results
+        json_filepath = '../Results/{model_name}/predictions.jsonl'.format(model_name=pretrained_model_name)
+        with open(json_filepath, 'w') as f:
+            for d in elaborations:
+                json.dump(d, f)
+                f.write('\n')
+
+        # write_elaborations_to_jsonl(test_dataset, elaborations, save_path)
         # print()
 
 

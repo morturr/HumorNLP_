@@ -20,9 +20,9 @@ from transformers import (
     HfArgumentParser,
 )
 import csv
-from data_loader import id2label, load_dataset
+from FlanT5.data_loader import id2label, load_dataset
 # from flan_utils import FlanEvaluationArguments
-from flan_utils import FlanTrainingArguments, FlanEvaluationArguments
+from FlanT5.flan_utils import FlanTrainingArguments, FlanEvaluationArguments
 
 from datasets import DatasetDict
 import sys
@@ -177,7 +177,10 @@ def create_report(labels_list, predictions_list, run_args, pos_label=1):
     recall = recall_score(labels_list, predictions_list, pos_label=pos_label)
     f1 = f1_score(labels_list, predictions_list, pos_label=pos_label)
 
-    result_path = f'Results/{run_args["model_name"]}'
+    if 'save_dir' in run_args:
+        result_path = run_args['save_dir']
+    else:
+        result_path = f'Results/{run_args["model_name"]}'
     os.makedirs(result_path, exist_ok=True)
 
     result_filename = f'{result_path}/{run_args["train_dataset"]}_scores.csv'

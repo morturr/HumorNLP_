@@ -7,18 +7,25 @@
 # !pip install git+https://github.com/huggingface/transformers.git
 
 # When prompted, paste the HF access token you created earlier.
+import argparse
+
+from typing import List
 
 from huggingface_hub import notebook_login
 from huggingface_hub import HfFolder
-
-from classify_and_evaluate import create_report
 
 # notebook_login()
 
 # from datasets import load_dataset
 import sys
+
+sys.path.append('../')
+sys.path.append('../../')
+from FlanT5.data_loader import load_instruction_dataset
+from FlanT5.classify_and_evaluate import create_report
 import torch
 import numpy as np
+
 from transformers import (
     AutoModelForCausalLM,
     BitsAndBytesConfig,
@@ -31,7 +38,6 @@ from transformers import (
 
 from peft import LoraConfig, TaskType
 from trl import SFTTrainer
-from data_loader import load_instruction_dataset
 
 from sklearn.metrics import (
     classification_report, precision_recall_fscore_support,
@@ -41,14 +47,36 @@ import os
 
 from datetime import datetime
 
-dataset_name = "headlines"
+parser = argparse.ArgumentParser()
+parser.add_argument("--train_dataset", dest="train_dataset", type=str, required=True)
+parser.add_argument("--eval_datasets", dest="eval_datasets", type=str,
+                    nargs='+', default=['amazon', 'dadjokes', 'headlines',
+                                        'one_liners', 'yelp_reviews'])
+parser.add_argument("--instruction_version", dest="instruction_version", type=int, default=-1)
+parser.add_argument("--train_batch_size", dest="train_batch_size", type=int, default=4)
+parser.add_argument("--inference_batch_size", dest="inference_batch_size", type=int, default=4)
+parser.add_argument("--max_steps", dest="max_steps", type=int, default=150)
+parser.add_argument("--data_percent", dest="data_percent", type=float, default=100)
+parser.add_argument("--max_seq_length", dest="max_seq_length", type=int, default=512)
+parser.add_argument("--max_new_tokens", dest="max_new_tokens", type=int, default=5)
+parser.add_argument("--task", dest="task", type=str, default='TRAIN')
+parser.add_argument("--eval_model_name", dest="eval_model_name", type=str, default='')
+args = parser.parse_args()
 
-if len(sys.argv) > 1:
-    instruction_version = sys.argv[1]
-else:
-    instruction_version = None
+# dataset_name = args.train_dataset
 
-dataset = load_instruction_dataset(dataset_name, percent=20, instruction_version=instruction_version)
+dataset = load_instruction_dataset(args.train_dataset, instruction_version=args.instruction_version,
+                                   percent=args.data_percent)
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.float16,
+)
+
+device_map = {"": 0}
+
+hf_access_token = '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'
 
 
 def cuda_memory_status():
@@ -66,8 +94,8 @@ def cuda_memory_status():
 
 def print_run_info(**kwargs):
     info_msgs = ['****',
-                 'Trying to run with the report file',
-                 'Medium amount of data (20%), medium steps (20), inference on test to see if it gets it'
+                 'Trying only yelp with more epochs (200) because the results weren\'t good',
+                 'Also increase max seq length to 1024',
                  ]
 
     for key, value in kwargs.items():
@@ -164,45 +192,175 @@ def print_run_info(**kwargs):
 #     trainer.model.save_pretrained(output_dir)
 
 
-def train_llama_versions():
-    global dataset, dataset_name
+# def train_llama_versions():
+#     global dataset, dataset_name
+#
+#     NUM_OF_VERSIONS = 6
+#
+#     # for version_id in range(NUM_OF_VERSIONS):
+#     version_id = 2
+#     dataset = load_instruction_dataset(dataset_name, percent=0.07, instruction_version=version_id)
+#     output_dir = f"Llama-2-7b-hf-{dataset_name}-ver-{version_id}-" \
+#                  f"{datetime.now().date()}"
+#     train_llama(output_dir)
+#
+#     # Empty cache after each model training
+#     torch.cuda.empty_cache()
 
-    NUM_OF_VERSIONS = 6
+def evaluate_llama():
+    if not args.eval_model_name:
+        raise ValueError('Please provide a model name to evaluate')
+    if args.train_dataset not in args.eval_model_name:
+        raise ValueError('Please provide a model name that was trained on the same dataset')
+    print('Evaluated model: ', args.eval_model_name)
+    # Load model and tokenizer
+    model = AutoModelForCausalLM.from_pretrained(
+        args.eval_model_name,
+        quantization_config=bnb_config,
+        device_map=device_map,
+        trust_remote_code=True,
+        # use_auth_token=True,
+        token=hf_access_token,
+        cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Models/",
+        # # TODO: remove this also:
+        # config=config,
+    )
 
-    # for version_id in range(NUM_OF_VERSIONS):
-    version_id = 2
-    dataset = load_instruction_dataset(dataset_name, percent=0.07, instruction_version=version_id)
-    output_dir = f"Llama-2-7b-hf-{dataset_name}-ver-{version_id}-" \
-                 f"{datetime.now().date()}"
-    train_llama(output_dir)
+    tokenizer = AutoTokenizer.from_pretrained(args.eval_model_name,
+                                              trust_remote_code=True,
+                                              token=hf_access_token,
+                                              cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Models/")
+    # Change padding side to left for inference
+    tokenizer.padding_side = "left"
+    assert tokenizer.padding_side == "left"
 
-    # Empty cache after each model training
-    torch.cuda.empty_cache()
+    for eval_dataset_name in args.eval_datasets:
+        curr_dataset = load_instruction_dataset(eval_dataset_name, instruction_version=args.instruction_version,
+                                                percent=args.data_percent)
+        split = 'test'
+
+        print(f'@@@ Evaluating on {eval_dataset_name} dataset. Examples count = {len(curr_dataset[split])} @@@')
+
+        # if split is train, remove the answer of output
+        def remove_response(row):
+            # output = 'Yes' if row['label'] == 1 else 'No'
+            # row['instruction'] = row['instruction'] + output
+            instruction = row['instruction']
+            terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
+            # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
+            row['instruction'] = instruction[:instruction.index(terminator) + len(terminator)]
+            return row
+
+        def get_response(row):
+            # output = 'Yes' if row['label'] == 1 else 'No'
+            # row['instruction'] = row['instruction'] + output
+            # instruction = row['instruction']
+            # terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
+            # # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
+            row['text label'] = 'Yes' if row['label'] == 1 else 'No'
+            # row['instruction'] = instruction[instruction.index(terminator) + len(terminator):]
+            return row
+
+        def get_prediction(response):
+            response_idx = response.index('### Response:\n') + len('### Response:\n')
+            response = response[response_idx:]
+            if 'Yes' in response and 'No' in response:
+                return 'Illegal'
+            if 'Yes' in response:
+                return 'Yes'
+            if 'No' in response:
+                return 'No'
+            return 'Illegal'
+
+        true_labels = curr_dataset[split].map(get_response)
+
+        if split == 'train':
+            curr_dataset[split] = curr_dataset[split].map(remove_response)
+
+        true_labels = [true_labels[i]['text label'] for i in range(len(true_labels))]
+        texts = [curr_dataset[split][i]['instruction'] for i in range(len(curr_dataset[split]))]
+
+        inference_batch_size = args.inference_batch_size
+        all_responses = []
+        prediction_list, label_list = [], []
+
+        for i in range(0, len(texts), inference_batch_size):
+            batch_texts = texts[i: i + inference_batch_size]
+            batch_labels = true_labels[i: i + inference_batch_size]
+            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
+            outputs = model.generate(input_ids=inputs["input_ids"].to("cuda"),
+                                     attention_mask=inputs["attention_mask"],
+                                     max_new_tokens=args.max_new_tokens,
+                                     pad_token_id=tokenizer.eos_token_id)
+
+            responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
+            all_responses.extend(responses)
+            batch_predictions = [get_prediction(response) for response in responses]
+            prediction_list.extend(batch_predictions)
+            label_list.extend(batch_labels)
+
+        prediction_list_int = [1 if prediction == 'Yes' else
+                               0 if prediction == 'No'
+                               else -1
+                               for prediction in prediction_list]
+
+        label_list_int = [1 if prediction == 'Yes' else
+                          0 if prediction == 'No'
+                          else -1
+                          for prediction in label_list]
+
+        # Remove illegal predictions
+        illegal_indices = [i for i, val in enumerate(prediction_list_int) if val == -1]
+        if illegal_indices:
+            print(f'Illegal predictions found in {len(illegal_indices)} examples')
+            for index in illegal_indices[::-1]:
+                prediction_list_int.pop(index)
+                label_list_int.pop(index)
+
+        model_name_idx = len(args.eval_model_name) - args.eval_model_name[::-1].index('/')
+        only_model_name = args.eval_model_name[model_name_idx:]
+
+        if os.path.exists('../Results'):
+            output_dir = f'../Results/{only_model_name}'
+        elif os.path.exists('Results'):
+            output_dir = f'Results/{only_model_name}'
+        else:
+            output_dir = f'{only_model_name}'
+        os.makedirs(output_dir, exist_ok=True)
+
+        run_args = {'train_dataset': args.train_dataset,
+                    'evaluate_dataset': eval_dataset_name,
+                    'model_name': only_model_name,
+                    'save_dir': output_dir}
+
+        create_report(label_list_int, prediction_list_int, run_args, pos_label=1)
+
+        curr_dataset[split] = curr_dataset[split].add_column("prediction", prediction_list)
+        curr_dataset[split].to_csv(f'{output_dir}/{eval_dataset_name}_predictions.csv')
+
+        with open(f'{output_dir}/instruction_results.txt', 'a') as f:
+            f.write(f'@@@ {eval_dataset_name} results')
+            for i in range(len(all_responses)):
+                f.write(
+                    f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
+                # print(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
 
 
 def train_llama(output_dir=None):
     base_model_name = "meta-llama/Llama-2-7b-hf"
-    print(f'^^^^  Training {base_model_name} on {dataset_name} ^^^^')
+    print(f'^^^^  Training {base_model_name} on {args.train_dataset} ^^^^')
     print(f'^^^ output dir = {output_dir} ^^^')
     train_args = {'num_of_epochs': 20,
-                  'max_steps': 20,
+                  'max_steps': args.max_steps,
+                  'train_dataset': args.train_dataset,
                   'train_size': len(dataset["train"]),
                   'max_new_tokens': 5,
-                  'train_batch_size': 4,
-                  'inference_batch_size': 4,
+                  'train_batch_size': args.train_batch_size,
+                  'inference_batch_size': args.inference_batch_size,
+                  'max_seq_length': args.max_seq_length,
                   }
 
     print_run_info(**train_args)
-
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-    )
-
-    device_map = {"": 0}
-
-    hf_access_token = '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'
 
     # # TODO: remove this. Trying to train Llama in a similar manner to Flan (using labels)
     # id2yesno = {0: "No", 1: "Yes"}
@@ -242,7 +400,7 @@ def train_llama(output_dir=None):
     tokenizer.pad_token = tokenizer.eos_token
 
     if not output_dir:
-        output_dir = f"{base_model_name.split('/')[1]}-{dataset_name}-" \
+        output_dir = f"../Models/{base_model_name.split('/')[1]}-{dataset_name}-" \
                      f"{datetime.now().date()}"
 
     training_args = TrainingArguments(
@@ -255,8 +413,6 @@ def train_llama(output_dir=None):
         report_to='none',
         num_train_epochs=train_args['num_of_epochs'],
     )
-
-    max_seq_length = 512
 
     # # TODO: for llama train with labels. remove this later
     # def compute_metrics(eval_pred) -> dict:
@@ -280,7 +436,7 @@ def train_llama(output_dir=None):
         train_dataset=dataset['train'],
         peft_config=peft_config,
         dataset_text_field="instruction",
-        max_seq_length=max_seq_length,
+        max_seq_length=train_args['max_seq_length'],
         tokenizer=tokenizer,
         args=training_args,
         # # TODO: Llama with labels, to remove
@@ -352,10 +508,10 @@ def train_llama(output_dir=None):
             batch_texts = texts[i: i + inference_batch_size]
             batch_labels = true_labels[i: i + inference_batch_size]
             inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
-            outputs = base_model.generate(input_ids=inputs["input_ids"].to("cuda"),
-                                          attention_mask=inputs["attention_mask"],
-                                          max_new_tokens=train_args['max_new_tokens'],
-                                          pad_token_id=tokenizer.eos_token_id)
+            outputs = trainer.model.generate(input_ids=inputs["input_ids"].to("cuda"),
+                                             attention_mask=inputs["attention_mask"],
+                                             max_new_tokens=train_args['max_new_tokens'],
+                                             pad_token_id=tokenizer.eos_token_id)
 
             responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
             all_responses.extend(responses)
@@ -363,29 +519,40 @@ def train_llama(output_dir=None):
             prediction_list.extend(batch_predictions)
             label_list.extend(batch_labels)
 
-        prediction_list = [1 if prediction == 'Yes' else
-                           0 if prediction == 'No'
-                           else -1
-                           for prediction in prediction_list]
+        prediction_list_int = [1 if prediction == 'Yes' else
+                               0 if prediction == 'No'
+                               else -1
+                               for prediction in prediction_list]
 
-        label_list = [1 if prediction == 'Yes' else
-                      0 if prediction == 'No'
-                      else -1
-                      for prediction in label_list]
+        label_list_int = [1 if prediction == 'Yes' else
+                          0 if prediction == 'No'
+                          else -1
+                          for prediction in label_list]
 
+        # Remove illegal predictions
+        illegal_indices = [i for i, val in enumerate(prediction_list_int) if val == -1]
+        if illegal_indices:
+            print(f'Illegal predictions found in {len(illegal_indices)} examples')
+            for index in illegal_indices[::-1]:
+                print(f'Removing illegal prediction #{index}: {prediction_list[index]}')
+                prediction_list_int.pop(index)
+                label_list_int.pop(index)
+
+        # TODO Mor: temporary model name
+        model_name = f'{base_model_name}-{datetime.now().strftime("%Y-%m-%d-%H-%M")}-{dataset_name}'
         run_args = {'train_dataset': dataset_name,
                     'evaluate_dataset': dataset_name,
-                    'model_name': base_model_name}
+                    'model_name': model_name}
 
-        create_report(label_list, prediction_list, run_args, pos_label=1)
+        create_report(label_list_int, prediction_list_int, run_args, pos_label=1)
 
         with open(f'{output_dir}/instruction_results.txt', 'a') as f:
             f.write(f'@@@ {split} split results')
             for i in range(len(all_responses)):
-                f.write(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
+                f.write(
+                    f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
                 print(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
 
-        pass
 
 #
 # def load_llama():
@@ -473,8 +640,11 @@ def train_llama(output_dir=None):
 #     print(report)
 #
 
-
 if __name__ == '__main__':
-    train_llama()
+    if args.task == 'TRAIN':
+        train_llama()
+
+    if args.task == 'EVAL':
+        evaluate_llama()
     # load_llama()
     # train_llama_versions()
