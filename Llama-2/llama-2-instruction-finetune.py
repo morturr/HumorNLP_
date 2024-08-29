@@ -400,7 +400,7 @@ def train_llama(output_dir=None):
     tokenizer.pad_token = tokenizer.eos_token
 
     if not output_dir:
-        output_dir = f"../Models/{base_model_name.split('/')[1]}-{dataset_name}-" \
+        output_dir = f"../Models/{base_model_name.split('/')[1]}-{args.train_dataset}-" \
                      f"{datetime.now().date()}"
 
     training_args = TrainingArguments(
@@ -539,9 +539,9 @@ def train_llama(output_dir=None):
                 label_list_int.pop(index)
 
         # TODO Mor: temporary model name
-        model_name = f'{base_model_name}-{datetime.now().strftime("%Y-%m-%d-%H-%M")}-{dataset_name}'
-        run_args = {'train_dataset': dataset_name,
-                    'evaluate_dataset': dataset_name,
+        model_name = f'{base_model_name}-{datetime.now().strftime("%Y-%m-%d-%H-%M")}-{args.train_dataset}'
+        run_args = {'train_dataset': args.train_dataset,
+                    'evaluate_dataset': args.train_dataset,
                     'model_name': model_name}
 
         create_report(label_list_int, prediction_list_int, run_args, pos_label=1)
