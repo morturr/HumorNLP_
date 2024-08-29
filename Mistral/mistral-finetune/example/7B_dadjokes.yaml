@@ -1,0 +1,37 @@
+# data
+data:
+  instruct_data: "/cs/labs/dshahaf/mortur/HumorNLP_/Data/new_humor_datasets/balanced/dadjokes/Json/train.jsonl"  # Fill
+  data: ""  # Optionally fill with pretraining data 
+  eval_instruct_data: ""  # Optionally fill
+#  eval_instruct_data: "/cs/labs/dshahaf/mortur/HumorNLP_/Mistral/data/ultrachat_chunk_eval.jsonl"  # Optionally fill
+
+# model
+model_id_or_path: "/cs/labs/dshahaf/mortur/HumorNLP_/Mistral/mistral_models/7B"  # Change to downloaded path
+lora:
+  rank: 64
+
+# optim
+seq_len: 32768
+batch_size: 1
+max_steps: 300
+optim:
+  lr: 6.e-5
+  weight_decay: 0.1
+  pct_start: 0.05
+
+# other
+seed: 0
+log_freq: 1
+eval_freq: 100
+no_eval: True
+ckpt_freq: 100
+
+save_adapters: True  # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model
+
+run_dir: "/cs/labs/dshahaf/mortur/HumorNLP_/Mistral/oneliners-24-08-19"  # Fill
+
+wandb:
+  project: "" # your wandb project name
+  run_name: "" # your wandb run name
+  key: "" # your wandb api key
+  offline: False
