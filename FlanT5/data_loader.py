@@ -71,7 +71,7 @@ def add_response(row):
 
 def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
                  add_instruction: bool = False, instruction_version=0,
-                 with_val=True) -> DatasetDict:
+                 with_val=True, train_percent=None) -> DatasetDict:
     """Load dataset."""
     if not data_file_path:
         data_file_path = ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
@@ -80,9 +80,9 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
 
     dataset_pandas = pd.read_csv(data_file_path)
 
-    if percent and type(percent) is float and percent <= 100:
-        samples_count = int(len(dataset_pandas) * percent / 100)
-        dataset_pandas = dataset_pandas.iloc[:samples_count]
+    # if percent and type(percent) is float and percent <= 100:
+    #     samples_count = int(len(dataset_pandas) * percent / 100)
+    #     dataset_pandas = dataset_pandas.iloc[:samples_count]
 
     dataset_pandas["text"] = dataset_pandas["text"].astype(str)
 
@@ -91,6 +91,9 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
 
     dataset = Dataset.from_pandas(dataset_pandas)
     dataset = dataset.class_encode_column("label")
+
+    if percent and type(percent) is float and percent <= 1:
+        dataset = dataset.train_test_split(test_size=percent, seed=42, stratify_by_column='label')['test']
 
     if with_val:
         # 75% train, 25% test + validation
@@ -106,6 +109,9 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
         train = train_test['train']
         test = train_test['test']
         val = None
+
+        if train_percent and type(train_percent) is float and train_percent <= 1:
+            train = train.train_test_split(test_size=train_percent, seed=42, stratify_by_column='label')['test']
 
     if add_instruction:
         train = train.map(add_response)
@@ -151,44 +157,49 @@ def load_current_LOO(train_names, test_name, all_datasets_dict):
     return dataset_dict
 
 
-def load_LOO_datasets(datasets):
+def load_LOO_datasets(datasets, add_intructions=False, instruction_version=0,
+                      with_val=True):
     """ load leave one out datasets"""
     data_path = ROOT_DIR + "/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
     all_datasets_dict = {}
 
-    DATA_PERCENT = 1 / (len(datasets) - 1)
+    TRAIN_DATA_PERCENT = 1 / (len(datasets) - 1)
 
     for dataset in datasets:
-        df = pd.read_csv(data_path.format(dataset_name=dataset))
+        all_datasets_dict[dataset] = load_dataset(dataset, train_percent=TRAIN_DATA_PERCENT,
+                                                  add_instruction=add_intructions,
+                                                  instruction_version=instruction_version,
+                                                  with_val=with_val)
+        # df = pd.read_csv(data_path.format(dataset_name=dataset))
+        #
+        # # append eos token to the other datasets to align them with amount of eos of amazon
+        # # if dataset != 'amazon':
+        # #     df['text'] = df['text'].apply(lambda s: s + ' </s>')
+        #
+        # # df = df.iloc[:1000]
+        #
+        # dataset_df = Dataset.from_pandas(df)
+        # dataset_df = dataset_df.class_encode_column("label")
+        # # 10% test, 90% train + validation
+        # trainval_test = dataset_df.train_test_split(test_size=0.2, seed=42, stratify_by_column='label')
+        #
+        # # Split the 90% train + valid in 85% train, 15% valid
+        # train_valid = trainval_test['train'].train_test_split(test_size=0.15, seed=42, stratify_by_column='label')
+        # test = trainval_test['test']
+        #
+        # # Divide each of train, valid by number of dataset for training (len(datasets)-1)
+        # todrop_train = train_valid['train'].train_test_split(test_size=DATA_PERCENT, seed=42,
+        #                                                      stratify_by_column='label')
+        # train = todrop_train['test']
+        # todrop_val = train_valid['test'].train_test_split(test_size=DATA_PERCENT, seed=42, stratify_by_column='label')
+        # val = todrop_val['test']
+        #
+        # dataset_dict = DatasetDict({
+        #     'train': train,
+        #     'test': test,
+        #     'val': val})
 
-        # append eos token to the other datasets to align them with amount of eos of amazon
-        if dataset != 'amazon':
-            df['text'] = df['text'].apply(lambda s: s + ' </s>')
-
-        # df = df.iloc[:1000]
-
-        dataset_df = Dataset.from_pandas(df)
-        dataset_df = dataset_df.class_encode_column("label")
-        # 10% test, 90% train + validation
-        trainval_test = dataset_df.train_test_split(test_size=0.1, seed=42, stratify_by_column='label')
-
-        # Split the 90% train + valid in 85% train, 15% valid
-        train_valid = trainval_test['train'].train_test_split(test_size=0.15, seed=42, stratify_by_column='label')
-        test = trainval_test['test']
-
-        # Divide each of train, valid by number of dataset for training (len(datasets)-1)
-        todrop_train = train_valid['train'].train_test_split(test_size=DATA_PERCENT, seed=42,
-                                                             stratify_by_column='label')
-        train = todrop_train['test']
-        todrop_val = train_valid['test'].train_test_split(test_size=DATA_PERCENT, seed=42, stratify_by_column='label')
-        val = todrop_val['test']
-
-        dataset_dict = DatasetDict({
-            'train': train,
-            'test': test,
-            'val': val})
-
-        all_datasets_dict[dataset] = dataset_dict
+        # all_datasets_dict[dataset] = dataset_dict
 
     return all_datasets_dict
 
@@ -245,7 +256,7 @@ def stratified_sample(dataset, label_column, sample_fraction=0.1):
 
 if __name__ == "__main__":
     dataset, kf = load_cv_dataset(dataset_name='headlines', add_instruction=False, with_val=False,
-                              percent=1)
+                                  percent=1)
 
     for split in ['train', 'test']:
         print(f'split = {split}')

@@ -2,6 +2,10 @@ import pandas as pd
 import os
 import json
 
+import sys
+sys.path.append('../')
+from FlanT5.data_loader import load_dataset, load_cv_dataset
+
 GENERIC_SYSTEM_PROMPT = "You are a helpful assistant"
 
 PROMPT_TEMPLATE = "Below is an instruction that describes a task, paired with a text sample. Write a response that " \
@@ -33,6 +37,7 @@ OUTPUT_TEMPLATE = "<classification>\n{OUTPUT}\n</classification>"
 
 DATA_PATH = '../Data/new_humor_datasets/balanced/{DATASET_NAME}/Splits/{SPLIT}.csv'
 JSON_DATA_PATH = '../Data/new_humor_datasets/balanced/{DATASET_NAME}/Json/{SPLIT}.jsonl'
+JSON_CV_DATA_PATH = '../Data/new_humor_datasets/balanced/{DATASET_NAME}/Json/CV_Splits/Split_{SPLIT_NUM}/{SPLIT}.jsonl'
 DATASETS = ['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews']
 
 
@@ -52,7 +57,32 @@ def generate_msg_list_wrapper(split):
     return generate_msg_list
 
 
-if __name__ == '__main__':
+def create_cv_jsonl():
+    for dataset in DATASETS:
+        df, kf = load_cv_dataset(num_of_split=4, dataset_name=dataset, add_instruction=False,
+                                          with_val=False)
+
+        # Iterate over Cross Validation splits and create jsonl files
+        for split_num, split_indices in enumerate(kf.split(df['text'], df['label'])):
+            train_index, test_index = split_indices
+
+            train_df = df.iloc[train_index]
+            test_df = df.iloc[test_index]
+
+            for split, split_df in [('train', train_df), ('test', test_df)]:
+                msgs_series = split_df.apply(generate_msg_list_wrapper(split),
+                                            axis=1)
+                msgs_series = msgs_series.apply(lambda x: {"messages": x})
+
+                json_filepath = JSON_CV_DATA_PATH.format(DATASET_NAME=dataset, SPLIT_NUM=split_num, SPLIT=split)
+                os.makedirs(os.path.dirname(json_filepath), exist_ok=True)
+                with open(json_filepath, 'w') as f:
+                    for d in msgs_series:
+                        json.dump(d, f)
+                        f.write('\n')
+
+
+def create_jsonl():
     for dataset in DATASETS:
         for split in ['train', 'val', 'test']:
             full_path = DATA_PATH.format(DATASET_NAME=dataset, SPLIT=split)
@@ -67,3 +97,14 @@ if __name__ == '__main__':
                 for d in msgs_series:
                     json.dump(d, f)
                     f.write('\n')
+
+
+if __name__ == '__main__':
+    # task_type = 'Regular'
+    task_type = 'Cross Validation'
+
+    if task_type == 'Regular':
+        create_jsonl()
+
+    if task_type == 'Cross Validation':
+        create_cv_jsonl()

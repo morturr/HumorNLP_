@@ -25,10 +25,17 @@ import sys
 
 sys.path.append('../')
 sys.path.append('../../')
-from FlanT5.data_loader import load_dataset, load_cv_dataset
+from FlanT5.data_loader import (
+    load_dataset,
+    load_cv_dataset,
+    load_LOO_datasets,
+    load_current_LOO,
+)
+
 from FlanT5.classify_and_evaluate import create_report
 import torch
 import numpy as np
+import pandas as pd
 
 from transformers import (
     AutoModelForCausalLM,
@@ -73,6 +80,14 @@ parser.add_argument('--batch_sizes', dest='batch_sizes', type=int, nargs='+', de
 parser.add_argument('--learning_rates', dest='learning_rates', type=float, nargs='+', default=[3e-4, 5e-5, 1e-5, 5e-6])
 parser.add_argument('--lora_ranks', dest='lora_ranks', type=int, nargs='+', default=[32, 64, 128])
 parser.add_argument('--lora_alpha', dest='lora_alpha', type=float, nargs='+', default=[8, 16, 32, 64])
+
+# Leave One Out parameters
+parser.add_argument('--param_combination_file', dest='param_combination_file', type=str, default='')
+parser.add_argument('--loo_datasets', dest='loo_datasets', type=str, nargs='+',
+                    default=['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews'])
+parser.add_argument('--leave_out', dest='leave_out', type=str, default='')
+parser.add_argument('--loo_seeds', dest='loo_seeds', type=int, nargs='+', default=[42])
+
 
 args = parser.parse_args()
 # dataset_name = args.train_dataset
@@ -147,6 +162,70 @@ def init_model_wrapper(model_name):
         return base_model
 
     return init_model
+
+
+def get_existing_combinations(df_combs, all_combs):
+    selected_combs = []
+
+    for index, row in df_combs.iterrows():
+        comb = tuple(row)
+        print(comb)
+        all_combs.remove(comb)
+        selected_combs.append(comb)
+
+    return selected_combs, all_combs
+
+
+def train_loo():
+    # First, check that param_combination_file is exists
+    if not args.param_combination_file:
+        raise ValueError('Please provide a file with parameter combinations')
+
+    if not args.leave_out:
+        raise ValueError('Please provide a dataset to leave out')
+
+    df_combs = pd.read_csv(args.param_combination_file)
+
+    print('Running Leave One out for dataset: ', args.leave_out)
+    for dataset in args.loo_datasets:
+        if dataset == args.leave_out:
+            continue
+
+        print('Training on combinations of dataset: ', dataset)
+
+        # Get the combinations for this dataset
+        ur
+        selected_combs, all_combs = get_existing_combinations(df_combs, all_combs)
+
+        for comb in selected_combs:
+            print_run_info(dataset=dataset, leave_out=args.leave_out, comb=comb)
+
+            # Update the training arguments
+            training_args = update_training_arguments(training_args, **comb)
+
+            # Train the model
+            train_model(
+                dataset=dataset,
+                training_args=training_args,
+                model_name=args.base_model_name,
+                init_model=init_model_wrapper(args.base_model_name),
+                seed=args.seed,
+                num_steps=args.num_steps,
+                batch_sizes=args.batch_sizes,
+                learning_rates=args.learning_rates,
+                lora_ranks=args.lora_ranks,
+                lora_alpha=args.lora_alpha,
+            )
+
+            # Evaluate the model
+            evaluate_llama(
+                eval_params=None,
+                additional_run_args={},
+                is_cross_eval=False,
+                cv_split_num=None,
+            )
+
+
 
 
 def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False,
@@ -244,6 +323,9 @@ def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False
             return row
 
         def get_prediction(response):
+            if '### Response:\n' not in response:
+                return 'Illegal'
+
             response_idx = response.index('### Response:\n') + len('### Response:\n')
             response = response[response_idx:]
             if 'Yes' in response and 'No' in response:
@@ -353,7 +435,22 @@ def train_llama_hyperparams():
     all_combinations = list(product(*param_grid.values()))
     random.shuffle(all_combinations)
     n_iter = 45
-    selected_combinations = all_combinations[:n_iter]
+
+    df_all_combs = create_combinations_file(args.train_dataset)
+
+    if not df_all_combs.empty:
+        # Count the number of combinations used for the first split
+        df_combs_split_0 = df_all_combs[df_all_combs['split_num'] == 0]
+        selected_combinations, all_combinations = get_existing_combinations(
+            df_combs_split_0.drop(columns=['split_num']), all_combinations)
+
+        print(f'**** Found {len(selected_combinations)} combinations from split 0 ****')
+
+        n_combs_to_add = n_iter - len(selected_combinations)
+        selected_combinations += all_combinations[:n_combs_to_add]
+
+    else:
+        selected_combinations = all_combinations[:n_iter]
 
     # Loop through the cross-validation splits
     for split_num, split_indices in enumerate(kf.split(dataset['instruction'], dataset['label'])):
@@ -372,6 +469,14 @@ def train_llama_hyperparams():
             print(f'Combination {comb_id + 1}/{n_iter}')
             print(f"Training with hyperparameters: {current_params}")
 
+            params_and_split = current_params.copy()
+            params_and_split['split_num'] = split_num
+            # Check if the combination and split is already in the file
+            if ((df_all_combs[list(params_and_split)] == pd.Series(params_and_split)).all(axis=1)).any():
+                print('~~ Combination and split already exists. ~~')
+                print(params_and_split)
+                print('~~ Skipping to the next combination. ~~')
+                continue
 
             # Check if we're directly in Llama directory
             cwd = os.getcwd()
@@ -424,6 +529,45 @@ def train_llama_hyperparams():
             train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
                         data_dict=data_dict, lora_args=lora_args, additional_run_args=additional_run_args,
                         is_cross_val=True, cv_split_num=split_num)
+
+
+def create_combinations_file(dataset_name):
+    PARAM_NAMES = ['seed', 'learning_rate', 'per_device_train_batch_size',
+                   'per_device_eval_batch_size', 'max_steps', 'lora_rank', 'lora_alpha', 'split_num']
+
+    if os.path.exists('../Results'):
+        results_dir = '../Results'
+    elif os.path.exists('Results'):
+        results_dir = 'Results'
+    else:
+        raise Exception('Results directory not found')
+
+    dataset_result_dirname = 'Llama-2-7b-hf-{DATASET}-2024-09-'.format(DATASET=dataset_name)
+
+    df_all_combs = pd.DataFrame(columns=PARAM_NAMES)
+    for _, dirs, _ in os.walk(results_dir):
+
+        for dir_name in dirs:
+            # Check if the results directory is of the wanted dataset
+            if dataset_result_dirname in dir_name:
+                inner_dir = os.path.join(results_dir, dir_name)
+                score_file_path = os.path.join(inner_dir, f'{dataset_name}_scores.csv')
+                df = pd.read_csv(score_file_path)
+                df = df[df['evaluate_dataset'] == dataset_name]
+
+                # Get only the parameters columns and append them to the overall parameters dataframe
+                df_only_params = df[PARAM_NAMES]
+                df_all_combs = pd.concat([df_all_combs, df_only_params])
+
+            else:
+                continue
+
+        # Bread after one level of directories, not entering the inner directories
+        break
+    if not df_all_combs.empty:
+        df_all_combs.to_csv(os.path.join(results_dir, f'{dataset_name}_all_combs.csv'), index=False)
+
+    return df_all_combs
 
 
 def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=None,
@@ -637,7 +781,31 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
     #             print(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
 
 
+def mor_check():
+    ## Checking jsonl files comparing to regular data. They are the same. checked on 2024-09-11
+    # name = 'headlines'
+    #
+    # dataset, kf = load_cv_dataset(num_of_split=4, dataset_name=name,
+    #                               percent=100, add_instruction=True,
+    #                               with_val=False)
+    #
+    # for split_num, split_indices in enumerate(kf.split(dataset['instruction'], dataset['label'])):
+    #     print('Training on split number:', split_num)
+    #     train_split, test_split = split_indices
+    #     train = dataset.iloc[train_split]
+    #     test = dataset.iloc[test_split]
+    #     test_json = pd.read_json(f'/cs/labs/dshahaf/mortur/HumorNLP_/Data/new_humor_datasets/balanced/{name}/Json/CV_Splits/Split_{split_num}/test.jsonl', lines=True)
+
+
+    ## Check leave one out data loading
+    datasets = ['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews']
+    data_dict = load_LOO_datasets(datasets, add_intructions=True, with_val=False)
+    pass
+
+
 if __name__ == '__main__':
+    mor_check()
+
     if args.task == 'TRAIN':
         train_llama()
 
@@ -646,4 +814,3 @@ if __name__ == '__main__':
 
     if args.task == 'TRAIN_HYPERPARAMS':
         train_llama_hyperparams()
-
