@@ -135,7 +135,7 @@ def get_partial_dataset(dataset_df, divide_by):
     return new_df
 
 
-def load_current_LOO(train_names, test_name, all_datasets_dict):
+def load_current_LOO(train_names, test_name, all_datasets_dict, with_val):
     combined_train = Dataset.from_dict({'text': [], 'label': []})
     combined_val = Dataset.from_dict({'text': [], 'label': []})
 
@@ -143,22 +143,29 @@ def load_current_LOO(train_names, test_name, all_datasets_dict):
         if dataset_name == test_name:
             continue
         combined_train = concatenate_datasets([combined_train, all_datasets_dict[dataset_name]['train']])
-        combined_val = concatenate_datasets([combined_val, all_datasets_dict[dataset_name]['val']])
+        if with_val:
+            combined_val = concatenate_datasets([combined_val, all_datasets_dict[dataset_name]['val']])
 
     combined_train = combined_train.shuffle(seed=42)
-    combined_val = combined_val.shuffle(seed=42)
+    if with_val:
+        combined_val = combined_val.shuffle(seed=42)
     test = all_datasets_dict[test_name]['test']
 
-    dataset_dict = DatasetDict({
-        'train': combined_train,
-        'test': test,
-        'val': combined_val})
+    if with_val:
+        dataset_dict = DatasetDict({
+            'train': combined_train,
+            'test': test,
+            'val': combined_val})
+    else:
+        dataset_dict = DatasetDict({
+            'train': combined_train,
+            'test': test})
 
     return dataset_dict
 
 
 def load_LOO_datasets(datasets, add_intructions=False, instruction_version=0,
-                      with_val=True):
+                      with_val=True, data_percent=None):
     """ load leave one out datasets"""
     data_path = ROOT_DIR + "/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
     all_datasets_dict = {}
@@ -169,37 +176,8 @@ def load_LOO_datasets(datasets, add_intructions=False, instruction_version=0,
         all_datasets_dict[dataset] = load_dataset(dataset, train_percent=TRAIN_DATA_PERCENT,
                                                   add_instruction=add_intructions,
                                                   instruction_version=instruction_version,
-                                                  with_val=with_val)
-        # df = pd.read_csv(data_path.format(dataset_name=dataset))
-        #
-        # # append eos token to the other datasets to align them with amount of eos of amazon
-        # # if dataset != 'amazon':
-        # #     df['text'] = df['text'].apply(lambda s: s + ' </s>')
-        #
-        # # df = df.iloc[:1000]
-        #
-        # dataset_df = Dataset.from_pandas(df)
-        # dataset_df = dataset_df.class_encode_column("label")
-        # # 10% test, 90% train + validation
-        # trainval_test = dataset_df.train_test_split(test_size=0.2, seed=42, stratify_by_column='label')
-        #
-        # # Split the 90% train + valid in 85% train, 15% valid
-        # train_valid = trainval_test['train'].train_test_split(test_size=0.15, seed=42, stratify_by_column='label')
-        # test = trainval_test['test']
-        #
-        # # Divide each of train, valid by number of dataset for training (len(datasets)-1)
-        # todrop_train = train_valid['train'].train_test_split(test_size=DATA_PERCENT, seed=42,
-        #                                                      stratify_by_column='label')
-        # train = todrop_train['test']
-        # todrop_val = train_valid['test'].train_test_split(test_size=DATA_PERCENT, seed=42, stratify_by_column='label')
-        # val = todrop_val['test']
-        #
-        # dataset_dict = DatasetDict({
-        #     'train': train,
-        #     'test': test,
-        #     'val': val})
-
-        # all_datasets_dict[dataset] = dataset_dict
+                                                  with_val=with_val,
+                                                  percent=data_percent)
 
     return all_datasets_dict
 
@@ -208,19 +186,6 @@ def load_cv_dataset(num_of_split=5, dataset_name='amazon', percent=None,
                     data_file_path=None, add_instruction: bool = False,
                     instruction_version=0, with_val=True
                     ) -> Tuple[pandas.DataFrame, StratifiedKFold]:
-    # dataset_pandas = pd.read_csv(
-    #     ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
-    # )
-    #
-    # if percent and type(percent) is float and percent <= 100:
-    #     samples_count = int(len(dataset_pandas) * percent / 100)
-    #     dataset_pandas = dataset_pandas.iloc[:samples_count]
-    #
-    # dataset_pandas["text"] = dataset_pandas["text"].astype(str)
-    # dataset = Dataset.from_pandas(dataset_pandas)
-    # # 90% train, 10% test
-    # dataset = dataset.class_encode_column("label")
-    # train_test = dataset.train_test_split(test_size=0.25, seed=42, stratify_by_column='label')
 
     dataset_dict = load_dataset(dataset_name, percent, data_file_path,
                                 add_instruction, with_val, instruction_version)
