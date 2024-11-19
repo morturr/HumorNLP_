@@ -11,6 +11,7 @@ import argparse
 
 from typing import List
 
+import psutil
 from huggingface_hub import notebook_login
 from huggingface_hub import HfFolder
 from datasets import Dataset, DatasetDict
@@ -55,6 +56,7 @@ from sklearn.metrics import (
 )
 
 import os
+import GPUtil
 
 from datetime import datetime
 
@@ -87,7 +89,8 @@ parser.add_argument('--loo_datasets', dest='loo_datasets', type=str, nargs='+',
                     default=['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews'])
 parser.add_argument('--leave_out', dest='leave_out', type=str, default='')
 parser.add_argument('--loo_seeds', dest='loo_seeds', type=int, nargs='+', default=[42])
-
+parser.add_argument('--loo_dataset_for_combs', dest='loo_dataset_for_combs', type=str, default='')
+parser.add_argument('--loo_comb_of_all_datasets', action=argparse.BooleanOptionalAction)
 
 args = parser.parse_args()
 # dataset_name = args.train_dataset
@@ -102,18 +105,21 @@ bnb_config = BitsAndBytesConfig(
 )
 
 device_map = {"": 0}
+# device_map = "auto"
+# print('+++++ Using device_map auto ++++')
 
 hf_access_token = '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'
 
 # TODO Mor: this line is for checking the memory usage. Remove it later
-OVERRIDE_BATCH_SIZE = True
+OVERRIDE_BATCH_SIZE = False
 
 
-def cuda_memory_status():
+def cuda_memory_status(code_location: str = ''):
+    print(code_location)
     torch.cuda.empty_cache()
-    total = torch.cuda.get_device_properties(0).total_memory
-    reserved = torch.cuda.memory_reserved(0)
-    allocated = torch.cuda.memory_allocated(0)
+    total = torch.cuda.get_device_properties(0).total_memory / (2**30)
+    reserved = torch.cuda.memory_reserved(0) / (2**30)
+    allocated = torch.cuda.memory_allocated(0) / (2**30)
     free_memory = reserved - allocated  # free inside reserved
     print('&& Cuda Memory Info &&')
     print(f'total memory = {total}')
@@ -121,6 +127,13 @@ def cuda_memory_status():
     print(f'allocated memory = {allocated}')
     print(f'free memory = {free_memory}')
 
+def log_memory_usage(code_location: str = ''):
+    print(code_location)
+    process = psutil.Process()
+    print(f"CPU Memory: {process.memory_info().rss / 1024 / 1024:.2f} MB")
+    gpus = GPUtil.getGPUs()
+    if gpus:
+        print(f"GPU Memory: {gpus[0].memoryUsed}MB / {gpus[0].memoryTotal}MB")
 
 def print_run_info(**kwargs):
     info_msgs = ['****',
@@ -155,7 +168,6 @@ def init_model_wrapper(model_name):
             # use_auth_token=True,
             token=hf_access_token,
             cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
-            # # TODO: remove this also:
             # config=config,
         )
         base_model.config.use_cache = False
@@ -180,6 +192,7 @@ def get_existing_combinations(df_combs, all_combs):
 
 
 def train_loo():
+    cuda_memory_status('Before LOO')
     # First, check that param_combination_file is exists
     if not args.param_combination_file:
         raise ValueError('Please provide a file with parameter combinations')
@@ -187,18 +200,35 @@ def train_loo():
     if not args.leave_out:
         raise ValueError('Please provide a dataset to leave out')
 
+    # Check if using combinations of all datasets
+    # If not, load the combination of the desired dataset
+    if not args.loo_comb_of_all_datasets:
+        if not args.loo_dataset_for_combs:
+            raise ValueError('Please provide a dataset to load the combinations from')
+        if args.loo_dataset_for_combs not in args.loo_datasets:
+            raise ValueError('The dataset for combinations is not in the datasets list')
+        if args.loo_dataset_for_combs == args.leave_out:
+            raise ValueError('The dataset for combinations cannot be the same as the leave out dataset')
+
+        datasets_for_combs = [args.loo_dataset_for_combs]
+
+    else:
+        datasets_for_combs = args.loo_datasets
+        if args.leave_out in datasets_for_combs:
+            datasets_for_combs.remove(args.leave_out)
+
     train_loo_name = 'LOO_' + args.leave_out
+    combs_format_name = 'COMB_' + args.loo_dataset_for_combs if not args.loo_comb_of_all_datasets else 'ALL'
     df_combs = pd.read_csv(args.param_combination_file)
+
     data_dict = load_LOO_datasets(datasets=args.loo_datasets, add_intructions=True, with_val=False,
                                   data_percent=args.data_percent)
     data_dict = load_current_LOO(train_names=args.loo_datasets, test_name=args.leave_out,
                                  all_datasets_dict=data_dict, with_val=False)
 
     print('Running Leave One out for dataset: ', args.leave_out)
-    for dataset_name in args.loo_datasets:
-        if dataset_name == args.leave_out:
-            continue
-
+    iteration = 0
+    for dataset_name in datasets_for_combs:
         print('Training on combinations of dataset: ', dataset_name)
 
         # Get the combinations for this dataset
@@ -207,14 +237,19 @@ def train_loo():
         for comb in curr_dataset_combs.iterrows():
             current_params = comb[1].to_dict()
 
+            print(f'** Training comb #{current_params["top"]} **')
+
             #TODO Mor: Remove these lines. just for debugging and small run
             current_params['max_steps'] = 3
             for seed in args.loo_seeds:
+                print(f'** Training with seed = {seed} **')
+
+                iteration += 1
                 # Loop through the selected combinations
                 pass
                 current_params['seed'] = seed
-                print(f"Training with hyperparameters: {current_params}")
 
+                print(f"Training with hyperparameters: {current_params}")
 
                 # Check if we're directly in Llama directory
                 cwd = os.getcwd()
@@ -226,7 +261,7 @@ def train_loo():
                 else:
                     raise Exception('Please run the script from the Llama-2 or Scripts directory')
 
-                REPOSITORY_ID = f"{prefix}{args.base_model_name.split('/')[1]}-{train_loo_name}-" \
+                REPOSITORY_ID = f"{prefix}{args.base_model_name.split('/')[1]}-{train_loo_name}-{combs_format_name}-" \
                                 f"{datetime.now().date()}"
 
                 print(f'training {REPOSITORY_ID}')
@@ -250,202 +285,221 @@ def train_loo():
                     gradient_accumulation_steps=4,
                     logging_steps=10,
                     report_to='none',
+                    gradient_checkpointing=True,
                 )
 
                 # training_args = update_training_arguments(training_args, **training_args_update)
                 lora_args = {'rank': current_params['lora_rank'], 'alpha': current_params['lora_alpha']}
 
+                cuda_memory_status(f'Before training, iteration {iteration}')
                 train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
                             data_dict=data_dict, lora_args=lora_args, additional_run_args=current_params,
                             is_cross_val=False, train_dataset_name=train_loo_name,
                             eval_datasets_names=args.loo_datasets)
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
+                gc.collect()
+                cuda_memory_status(f'After training, iteration {iteration}')
+
 
 
 def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False,
                    cv_split_num=None):
-    if eval_params:
-        model = eval_params['model']
-        tokenizer = eval_params['tokenizer']
-        train_dataset_name = eval_params['train_dataset_name']
-        eval_datasets = eval_params['eval_datasets']
-        eval_model_name = eval_params['model_location']
+    with torch.no_grad():
+        if eval_params:
+            model = eval_params['model']
+            tokenizer = eval_params['tokenizer']
+            train_dataset_name = eval_params['train_dataset_name']
+            eval_datasets = eval_params['eval_datasets']
+            eval_model_name = eval_params['model_location']
 
-    else:
-        if not args.eval_model_name:
-            raise ValueError('Please provide a model name to evaluate')
-
-        if args.train_dataset not in args.eval_model_name:
-            raise ValueError('Please provide a model name that was trained on the same dataset')
-
-        eval_model_name = args.eval_model_name
-        train_dataset_name = args.train_dataset
-        eval_datasets = args.eval_datasets
-
-        print('Evaluated model: ', args.eval_model_name)
-        # Load model and tokenizer
-        model = AutoModelForCausalLM.from_pretrained(
-            args.eval_model_name,
-            quantization_config=bnb_config,
-            device_map=device_map,
-            trust_remote_code=True,
-            # use_auth_token=True,
-            token=hf_access_token,
-            cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
-            # # TODO: remove this also:
-            # config=config,
-        )
-
-        tokenizer = AutoTokenizer.from_pretrained(args.eval_model_name,
-                                                  trust_remote_code=True,
-                                                  token=hf_access_token,
-                                                  cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/")
-
-    # Change padding side to left for inference
-    tokenizer.padding_side = "left"
-    assert tokenizer.padding_side == "left"
-
-    for eval_dataset_name in eval_datasets:
-        if is_cross_eval:
-            # Load specific split of cross validation of the requested dataset
-            dataset, kf = load_cv_dataset(num_of_split=4, dataset_name=eval_dataset_name,
-                                          percent=args.data_percent, add_instruction=True,
-                                          with_val=False)
-            train_indices, test_indices = list(kf.split(dataset['instruction'], dataset['label']))[cv_split_num]
-            # train = Dataset.from_pandas(dataset.iloc[train_indices])
-            test = Dataset.from_pandas(dataset.iloc[test_indices])
-
-            # If it's a different dataset, sample 10% of the test set for validation
-            if eval_dataset_name != train_dataset_name:
-                test = test.class_encode_column("label")
-                test = test.train_test_split(test_size=0.1, seed=42, stratify_by_column='label')['test']
-
-            curr_dataset = DatasetDict()
-            curr_dataset['train'] = None
-            curr_dataset['test'] = test
-
-        # if data_dict:
-        #     print('Using data_dict')
-        #     from copy import deepcopy
-        #     curr_dataset = deepcopy(data_dict)
-        #     assert len(eval_datasets) == 1, "Only one dataset should be provided when using data_dict"
         else:
-            curr_dataset = load_dataset(eval_dataset_name, instruction_version=args.instruction_version,
-                                        percent=args.data_percent, add_instruction=True, with_val=False)
-        split = 'test'
+            if not args.eval_model_name:
+                raise ValueError('Please provide a model name to evaluate')
 
-        print(f'@@@ Evaluating on {eval_dataset_name} dataset. Examples count = {len(curr_dataset[split])} @@@')
+            if args.train_dataset not in args.eval_model_name:
+                raise ValueError('Please provide a model name that was trained on the same dataset')
 
-        # if split is train, remove the answer of output
-        def remove_response(row):
-            # output = 'Yes' if row['label'] == 1 else 'No'
-            # row['instruction'] = row['instruction'] + output
-            instruction = row['instruction']
-            terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
-            # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
-            row['instruction'] = instruction[:instruction.index(terminator) + len(terminator)]
-            return row
+            eval_model_name = args.eval_model_name
+            train_dataset_name = args.train_dataset
+            eval_datasets = args.eval_datasets
 
-        def get_response(row):
-            # output = 'Yes' if row['label'] == 1 else 'No'
-            # row['instruction'] = row['instruction'] + output
-            # instruction = row['instruction']
-            # terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
-            # # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
-            row['text label'] = 'Yes' if row['label'] == 1 else 'No'
-            # row['instruction'] = instruction[instruction.index(terminator) + len(terminator):]
-            return row
+            print('Evaluated model: ', args.eval_model_name)
+            # Load model and tokenizer
+            model = AutoModelForCausalLM.from_pretrained(
+                args.eval_model_name,
+                quantization_config=bnb_config,
+                device_map=device_map,
+                trust_remote_code=True,
+                # use_auth_token=True,
+                token=hf_access_token,
+                cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
+                # config=config,
+            )
 
-        def get_prediction(response):
-            if '### Response:\n' not in response:
+            tokenizer = AutoTokenizer.from_pretrained(args.eval_model_name,
+                                                      trust_remote_code=True,
+                                                      token=hf_access_token,
+                                                      cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/")
+
+        # Change padding side to left for inference
+        tokenizer.padding_side = "left"
+        assert tokenizer.padding_side == "left"
+
+        for eval_dataset_name in eval_datasets:
+            start_eval_time = time.time()
+            if is_cross_eval:
+                # Load specific split of cross validation of the requested dataset
+                dataset, kf = load_cv_dataset(num_of_split=4, dataset_name=eval_dataset_name,
+                                              percent=args.data_percent, add_instruction=True,
+                                              with_val=False)
+                train_indices, test_indices = list(kf.split(dataset['instruction'], dataset['label']))[cv_split_num]
+                # train = Dataset.from_pandas(dataset.iloc[train_indices])
+                test = Dataset.from_pandas(dataset.iloc[test_indices])
+
+                # If it's a different dataset, sample 10% of the test set for validation
+                if eval_dataset_name != train_dataset_name:
+                    test = test.class_encode_column("label")
+                    test = test.train_test_split(test_size=0.1, seed=42, stratify_by_column='label')['test']
+
+                curr_dataset = DatasetDict()
+                curr_dataset['train'] = None
+                curr_dataset['test'] = test
+
+            # if data_dict:
+            #     print('Using data_dict')
+            #     from copy import deepcopy
+            #     curr_dataset = deepcopy(data_dict)
+            #     assert len(eval_datasets) == 1, "Only one dataset should be provided when using data_dict"
+            else:
+                curr_dataset = load_dataset(eval_dataset_name, instruction_version=args.instruction_version,
+                                            percent=args.data_percent, add_instruction=True, with_val=False)
+            split = 'test'
+
+            print(f'@@@ Evaluating on {eval_dataset_name} dataset. Examples count = {len(curr_dataset[split])} @@@')
+
+            # if split is train, remove the answer of output
+            def remove_response(row):
+                # output = 'Yes' if row['label'] == 1 else 'No'
+                # row['instruction'] = row['instruction'] + output
+                instruction = row['instruction']
+                terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
+                # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
+                row['instruction'] = instruction[:instruction.index(terminator) + len(terminator)]
+                return row
+
+            def get_response(row):
+                # output = 'Yes' if row['label'] == 1 else 'No'
+                # row['instruction'] = row['instruction'] + output
+                # instruction = row['instruction']
+                # terminator = '### Output:\n' if '### Output:\n' in instruction else '### Response:\n'
+                # # row['instruction'] = instruction[:instruction.index('### Output: ') + len('### Output: ')]
+                row['text label'] = 'Yes' if row['label'] == 1 else 'No'
+                # row['instruction'] = instruction[instruction.index(terminator) + len(terminator):]
+                return row
+
+            def get_prediction(response):
+                if '### Response:\n' not in response:
+                    return 'Illegal'
+
+                response_idx = response.index('### Response:\n') + len('### Response:\n')
+                response = response[response_idx:]
+                if 'Yes' in response and 'No' in response:
+                    return 'Illegal'
+                if 'Yes' in response:
+                    return 'Yes'
+                if 'No' in response:
+                    return 'No'
                 return 'Illegal'
 
-            response_idx = response.index('### Response:\n') + len('### Response:\n')
-            response = response[response_idx:]
-            if 'Yes' in response and 'No' in response:
-                return 'Illegal'
-            if 'Yes' in response:
-                return 'Yes'
-            if 'No' in response:
-                return 'No'
-            return 'Illegal'
+            true_labels = curr_dataset[split].map(get_response)
 
-        true_labels = curr_dataset[split].map(get_response)
+            # Remove the response from the instruction (If there is one)
+            curr_dataset[split] = curr_dataset[split].map(remove_response)
 
-        # Remove the response from the instruction (If there is one)
-        curr_dataset[split] = curr_dataset[split].map(remove_response)
+            true_labels = [true_labels[i]['text label'] for i in range(len(true_labels))]
+            texts = [curr_dataset[split][i]['instruction'] for i in range(len(curr_dataset[split]))]
 
-        true_labels = [true_labels[i]['text label'] for i in range(len(true_labels))]
-        texts = [curr_dataset[split][i]['instruction'] for i in range(len(curr_dataset[split]))]
+            inference_batch_size = args.inference_batch_size
+            all_responses = []
+            prediction_list, label_list = [], []
 
-        inference_batch_size = args.inference_batch_size
-        all_responses = []
-        prediction_list, label_list = [], []
+            for i in range(0, len(texts), inference_batch_size):
+                batch_texts = texts[i: i + inference_batch_size]
+                batch_labels = true_labels[i: i + inference_batch_size]
+                inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
+                outputs = model.generate(input_ids=inputs["input_ids"].to("cuda"),
+                                         attention_mask=inputs["attention_mask"],
+                                         max_new_tokens=args.max_new_tokens,
+                                         pad_token_id=tokenizer.eos_token_id)
 
-        for i in range(0, len(texts), inference_batch_size):
-            batch_texts = texts[i: i + inference_batch_size]
-            batch_labels = true_labels[i: i + inference_batch_size]
-            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
-            outputs = model.generate(input_ids=inputs["input_ids"].to("cuda"),
-                                     attention_mask=inputs["attention_mask"],
-                                     max_new_tokens=args.max_new_tokens,
-                                     pad_token_id=tokenizer.eos_token_id)
+                responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
+                all_responses.extend(responses)
+                batch_predictions = [get_prediction(response) for response in responses]
+                prediction_list.extend(batch_predictions)
+                label_list.extend(batch_labels)
 
-            responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
-            all_responses.extend(responses)
-            batch_predictions = [get_prediction(response) for response in responses]
-            prediction_list.extend(batch_predictions)
-            label_list.extend(batch_labels)
+            prediction_list_int = [1 if prediction == 'Yes' else
+                                   0 if prediction == 'No'
+                                   else -1
+                                   for prediction in prediction_list]
 
-        prediction_list_int = [1 if prediction == 'Yes' else
-                               0 if prediction == 'No'
-                               else -1
-                               for prediction in prediction_list]
+            label_list_int = [1 if prediction == 'Yes' else
+                              0 if prediction == 'No'
+                              else -1
+                              for prediction in label_list]
 
-        label_list_int = [1 if prediction == 'Yes' else
-                          0 if prediction == 'No'
-                          else -1
-                          for prediction in label_list]
+            # Remove illegal predictions
+            illegal_indices = [i for i, val in enumerate(prediction_list_int) if val == -1]
+            if illegal_indices:
+                print(f'Illegal predictions found in {len(illegal_indices)} examples')
+                for index in illegal_indices[::-1]:
+                    prediction_list_int.pop(index)
+                    label_list_int.pop(index)
 
-        # Remove illegal predictions
-        illegal_indices = [i for i, val in enumerate(prediction_list_int) if val == -1]
-        if illegal_indices:
-            print(f'Illegal predictions found in {len(illegal_indices)} examples')
-            for index in illegal_indices[::-1]:
-                prediction_list_int.pop(index)
-                label_list_int.pop(index)
+            if '/' in eval_model_name:
+                model_name_idx = len(eval_model_name) - eval_model_name[::-1].index('/')
+                only_model_name = eval_model_name[model_name_idx:]
+            else:
+                only_model_name = eval_model_name
 
-        if '/' in eval_model_name:
-            model_name_idx = len(eval_model_name) - eval_model_name[::-1].index('/')
-            only_model_name = eval_model_name[model_name_idx:]
-        else:
-            only_model_name = eval_model_name
+            if os.path.exists('../Results'):
+                output_dir = f'../Results/{only_model_name}'
+            elif os.path.exists('Results'):
+                output_dir = f'Results/{only_model_name}'
+            else:
+                output_dir = f'{only_model_name}'
+            os.makedirs(output_dir, exist_ok=True)
 
-        if os.path.exists('../Results'):
-            output_dir = f'../Results/{only_model_name}'
-        elif os.path.exists('Results'):
-            output_dir = f'Results/{only_model_name}'
-        else:
-            output_dir = f'{only_model_name}'
-        os.makedirs(output_dir, exist_ok=True)
+            run_args = {'train_dataset': train_dataset_name,
+                        'evaluate_dataset': eval_dataset_name,
+                        'model_name': only_model_name,
+                        'save_dir': output_dir}
 
-        run_args = {'train_dataset': train_dataset_name,
-                    'evaluate_dataset': eval_dataset_name,
-                    'model_name': only_model_name,
-                    'save_dir': output_dir}
+            run_args.update(additional_run_args)
 
-        run_args.update(additional_run_args)
+            create_report(label_list_int, prediction_list_int, run_args, pos_label=1)
 
-        create_report(label_list_int, prediction_list_int, run_args, pos_label=1)
+            curr_dataset[split] = curr_dataset[split].add_column("prediction", prediction_list)
+            curr_dataset[split].to_csv(f'{output_dir}/{eval_dataset_name}_predictions.csv')
 
-        curr_dataset[split] = curr_dataset[split].add_column("prediction", prediction_list)
-        curr_dataset[split].to_csv(f'{output_dir}/{eval_dataset_name}_predictions.csv')
+            with open(f'{output_dir}/instruction_results.txt', 'a') as f:
+                f.write(f'@@@ {eval_dataset_name} results')
+                for i in range(len(all_responses)):
+                    f.write(
+                        f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
+                    # print(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
 
-        with open(f'{output_dir}/instruction_results.txt', 'a') as f:
-            f.write(f'@@@ {eval_dataset_name} results')
-            for i in range(len(all_responses)):
-                f.write(
-                    f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
-                # print(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
+            end_eval_time = time.time()
+            print(f'Evaluation on {eval_dataset_name} took {(end_eval_time - start_eval_time) / 60} minutes')
+
+    # Clear memory
+    print('|||||', 'Evaluation: Clearing memory', '|||||', sep='\n')
+    import gc
+    del model, tokenizer
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
 def train_llama_hyperparams():
@@ -467,9 +521,14 @@ def train_llama_hyperparams():
     # Generate and shuffle (to randomize the selection) all possible combinations of parameters
     all_combinations = list(product(*param_grid.values()))
     random.shuffle(all_combinations)
-    n_iter = 45
 
+    # TODO Mor: Changing n_iter to 1 for debugging, change back to 45
+    n_iter = 45
+    # n_iter = 1
+
+    # TODO Mor: Changing df_all_combs to empty for debugging, change back to load from function
     df_all_combs = create_combinations_file(args.train_dataset)
+    # df_all_combs = pd.DataFrame()
 
     if not df_all_combs.empty:
         # Count the number of combinations used for the first split
@@ -539,6 +598,7 @@ def train_llama_hyperparams():
                 gradient_accumulation_steps=4,
                 logging_steps=10,
                 report_to='none',
+                gradient_checkpointing=True,
             )
 
             # training_args_update = {
@@ -639,7 +699,6 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
         # use_auth_token=True,
         token=hf_access_token,
         cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
-        # # TODO: remove this also:
         # config=config,
     )
     base_model.config.use_cache = False
@@ -675,6 +734,7 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
             max_steps=train_args['max_steps'],
             report_to='none',
             num_train_epochs=train_args['num_of_epochs'],
+            gradient_checkpointing=True,
         )
 
     # Change padding side to right for training
@@ -721,6 +781,14 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
     print(f'Evaluation took {(eval_end_time - eval_start_time) / 60} minutes')
     print('@@@@@@@@@@@@@@@')
 
+    # Clear memory
+    print('|||||', 'Clearing memory', '|||||', sep='\n')
+    import gc
+    trainer.model.to('cpu')
+    del base_model, trainer.model, trainer, tokenizer
+    gc.collect()
+    torch.cuda.empty_cache()
+    gc.collect()
 
 
 def mor_check():
