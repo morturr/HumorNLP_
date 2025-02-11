@@ -1,0 +1,16 @@
+dataset,param_metric,top,seed,learning_rate,per_device_train_batch_size,per_device_eval_batch_size,max_steps,lora_rank,lora_alpha,median_accuracy,model_name
+amazon,best_median,1,42,0.0003,2,2,200,128,8,0.6980,Mistral-7B-v0.1-amazon-2025-01-06
+amazon,best_median,2,42,0.0003,2,2,150,32,8,0.6967,Mistral-7B-v0.1-amazon-2025-01-06
+amazon,best_median,3,42,0.0003,2,2,200,32,8,0.6934,Mistral-7B-v0.1-amazon-2025-01-07
+dadjokes,best_median,1,42,6e-05,2,2,150,32,16,0.7007,Mistral-7B-v0.1-dadjokes-2024-12-30
+dadjokes,best_median,2,42,6e-05,2,2,150,64,16,0.6928,Mistral-7B-v0.1-dadjokes-2024-12-27
+dadjokes,best_median,3,42,5e-05,2,2,200,32,8,0.6875,Mistral-7B-v0.1-dadjokes-2024-12-30
+headlines,best_median,1,42,5e-05,2,2,150,128,16,0.6594,Mistral-7B-v0.1-headlines-2025-01-06
+headlines,best_median,2,42,6e-05,2,2,150,128,16,0.6561,Mistral-7B-v0.1-headlines-2024-12-28
+headlines,best_median,3,42,5e-05,2,2,200,32,8,0.6456,Mistral-7B-v0.1-headlines-2025-01-01
+one_liners,best_median,1,42,0.0003,2,2,200,64,8,0.6783,Mistral-7B-v0.1-one_liners-2025-01-10
+one_liners,best_median,2,42,0.0003,2,2,150,128,16,0.6776,Mistral-7B-v0.1-one_liners-2024-12-28
+one_liners,best_median,3,42,0.0003,2,2,150,32,32,0.6770,Mistral-7B-v0.1-one_liners-2024-12-27
+yelp_reviews,best_median,1,42,5e-05,2,2,200,32,8,0.5730,Mistral-7B-v0.1-yelp_reviews-2025-01-13
+yelp_reviews,best_median,2,42,5e-05,2,2,150,32,8,0.5671,Mistral-7B-v0.1-yelp_reviews-2025-01-13
+yelp_reviews,best_median,3,42,6e-05,2,2,150,64,16,0.5559,Mistral-7B-v0.1-yelp_reviews-2025-01-24
