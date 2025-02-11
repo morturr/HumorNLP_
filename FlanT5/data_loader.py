@@ -5,7 +5,7 @@ import pandas as pd
 from datasets import Dataset, DatasetDict, concatenate_datasets
 from sklearn.model_selection import KFold, StratifiedKFold
 
-from typing import Tuple
+from typing import Tuple, List
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # DATASET_NAME = 'yelp'
@@ -71,7 +71,7 @@ def add_response(row):
 
 def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
                  add_instruction: bool = False, instruction_version=0,
-                 with_val=True, train_percent=None) -> DatasetDict:
+                 with_val=True, train_size=None, test_percent=None) -> DatasetDict:
     """Load dataset."""
     if not data_file_path:
         data_file_path = ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
@@ -80,10 +80,6 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
 
     dataset_pandas = pd.read_csv(data_file_path)
 
-    # if percent and type(percent) is float and percent <= 100:
-    #     samples_count = int(len(dataset_pandas) * percent / 100)
-    #     dataset_pandas = dataset_pandas.iloc[:samples_count]
-
     dataset_pandas["text"] = dataset_pandas["text"].astype(str)
 
     if add_instruction:
@@ -91,9 +87,6 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
 
     dataset = Dataset.from_pandas(dataset_pandas)
     dataset = dataset.class_encode_column("label")
-
-    if percent and type(percent) is float and percent <= 1:
-        dataset = dataset.train_test_split(test_size=percent, seed=42, stratify_by_column='label')['test']
 
     if with_val:
         # 75% train, 25% test + validation
@@ -110,8 +103,14 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
         test = train_test['test']
         val = None
 
-        if train_percent and type(train_percent) is float and train_percent <= 1:
-            train = train.train_test_split(test_size=train_percent, seed=42, stratify_by_column='label')['test']
+
+    if train_size:
+        train = train.train_test_split(train_size=train_size, seed=42, stratify_by_column='label')['train']
+
+    # Actually use as evaluation set, when want to run many parameters and save test evaluation
+    # Usually, test_percent = 0.1
+    if test_percent:
+        test = test.train_test_split(test_size=test_percent, seed=42, stratify_by_column='label')['test']
 
     if add_instruction:
         train = train.map(add_response)
@@ -122,31 +121,39 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
         'test': test,
         'val': val})
 
+    if percent and type(percent) is float and percent <= 1:
+        for split in dataset_dict:
+            if dataset_dict[split]:
+                dataset_dict[split] = dataset_dict[split].train_test_split(test_size=percent, seed=42, stratify_by_column='label')['test']
+
     return dataset_dict
 
 
-def get_partial_dataset(dataset_df, divide_by):
-    positive = dataset_df[dataset_df['label'] == 1].iloc[:int(size / 2)]
-    negative = dataset_df[dataset_df['label'] == 0].iloc[:int(size / 2)]
-
-    new_df = pd.concat([positive, negative], ignore_index=True)
-    new_df = new_df.sample(frac=1, random_state=42, ignore_index=True)
-
-    return new_df
-
-
-def load_current_LOO(train_names, test_name, all_datasets_dict, with_val):
+def load_current_LOO(train_names, test_name, all_datasets_dict, with_val,
+                     loo_with_few=False):
     combined_train = Dataset.from_dict({'text': [], 'label': []})
     combined_val = Dataset.from_dict({'text': [], 'label': []})
 
     for dataset_name in train_names:
         if dataset_name == test_name:
-            continue
-        combined_train = concatenate_datasets([combined_train, all_datasets_dict[dataset_name]['train']])
+            # if this is regular leave-one-out, we don't want to include the test dataset in the training
+            if not loo_with_few:
+                continue
+            # if this is leave-one-out with few samples, we want to include a few samples from the test dataset
+            else:
+                train_size = 20
+                dataset_train = all_datasets_dict[dataset_name]['train'].train_test_split(
+                    train_size=train_size, seed=42, stratify_by_column='label')['train']
+        else:
+            # if it's not the leave-out dataset, we include the whole training dataset
+            dataset_train = all_datasets_dict[dataset_name]['train']
+
+        combined_train = concatenate_datasets([combined_train, dataset_train])
         if with_val:
             combined_val = concatenate_datasets([combined_val, all_datasets_dict[dataset_name]['val']])
 
     combined_train = combined_train.shuffle(seed=42)
+
     if with_val:
         combined_val = combined_val.shuffle(seed=42)
     test = all_datasets_dict[test_name]['test']
@@ -167,13 +174,12 @@ def load_current_LOO(train_names, test_name, all_datasets_dict, with_val):
 def load_LOO_datasets(datasets, add_intructions=False, instruction_version=0,
                       with_val=True, data_percent=None):
     """ load leave one out datasets"""
-    data_path = ROOT_DIR + "/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
     all_datasets_dict = {}
 
     TRAIN_DATA_PERCENT = 1 / (len(datasets) - 1)
 
     for dataset in datasets:
-        all_datasets_dict[dataset] = load_dataset(dataset, train_percent=TRAIN_DATA_PERCENT,
+        all_datasets_dict[dataset] = load_dataset(dataset, train_size=TRAIN_DATA_PERCENT,
                                                   add_instruction=add_intructions,
                                                   instruction_version=instruction_version,
                                                   with_val=with_val,
@@ -196,6 +202,27 @@ def load_cv_dataset(num_of_split=5, dataset_name='amazon', percent=None,
 
     return train, kf
 
+def load_combined_dataset(datasets_names, percent=None, add_instruction: bool = False,
+                          instruction_version=0):
+
+    TRAIN_DATA_PERCENT = 1 / (len(datasets_names))
+
+    combined_train = Dataset.from_dict({'text': [], 'label': []})
+
+    for dataset in datasets_names:
+        curr_dataset_dict = load_dataset(dataset, train_size=TRAIN_DATA_PERCENT,
+                                                  add_instruction=add_instruction,
+                                                  instruction_version=instruction_version,
+                                                  with_val=False,
+                                                  percent=percent)
+
+        combined_train = concatenate_datasets([combined_train, curr_dataset_dict['train']])
+
+    combined_train = combined_train.shuffle(seed=42)
+
+    datasets_dict = DatasetDict({'train': combined_train})
+
+    return datasets_dict
 
 from datasets import Dataset
 from sklearn.model_selection import train_test_split
@@ -220,14 +247,23 @@ def stratified_sample(dataset, label_column, sample_fraction=0.1):
 
 
 if __name__ == "__main__":
-    dataset, kf = load_cv_dataset(dataset_name='headlines', add_instruction=False, with_val=False,
-                                  percent=1)
+    loo_datasets = ['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews']
+    data_dict_pair = load_combined_dataset(datasets_names=['amazon', 'headlines'], add_instruction=True)
 
-    for split in ['train', 'test']:
-        print(f'split = {split}')
-        for sample in dataset[split]:
-            print(sample['instruction'])
-            print(sample['label'])
+    data = load_dataset(dataset_name='amazon', percent=0.1,
+                 add_instruction=False, instruction_version = 0,
+    with_val = False)
+    # data_dict = load_LOO_datasets(datasets=loo_datasets, add_intructions=True, with_val=False,
+    #                               data_percent=1)
+    # data_dict = load_current_LOO(train_names=loo_datasets, test_name='headlines',
+    #                              all_datasets_dict=data_dict, with_val=False, loo_with_few=False)
+
+
+    # for split in ['train', 'test']:
+    #     print(f'split = {split}')
+    #     for sample in dataset[split]:
+    #         print(sample['instruction'])
+    #         print(sample['label'])
 
     # load_dataset(add_instruction=False)
     pass

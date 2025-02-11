@@ -8,6 +8,7 @@
 
 # When prompted, paste the HF access token you created earlier.
 import argparse
+import csv
 
 from typing import List
 
@@ -31,6 +32,7 @@ from FlanT5.data_loader import (
     load_cv_dataset,
     load_LOO_datasets,
     load_current_LOO,
+    load_combined_dataset
 )
 
 from FlanT5.classify_and_evaluate import create_report
@@ -48,7 +50,7 @@ from transformers import (
     LlamaConfig,
 )
 
-from peft import LoraConfig, TaskType
+from peft import LoraConfig, TaskType, get_peft_model
 from trl import SFTTrainer
 
 from sklearn.metrics import (
@@ -65,12 +67,12 @@ parser.add_argument("--train_dataset", dest="train_dataset", type=str, required=
 parser.add_argument("--eval_datasets", dest="eval_datasets", type=str,
                     nargs='+', default=['amazon', 'dadjokes', 'headlines',
                                         'one_liners', 'yelp_reviews'])
-parser.add_argument("--instruction_version", dest="instruction_version", type=int, default=-1)
+parser.add_argument("--instruction_version", dest="instruction_version", type=int, default=0)
 parser.add_argument("--train_batch_size", dest="train_batch_size", type=int, default=4)
 parser.add_argument("--inference_batch_size", dest="inference_batch_size", type=int, default=4)
-parser.add_argument("--max_steps", dest="max_steps", type=int, default=150)
 parser.add_argument("--data_percent", dest="data_percent", type=float, default=1)
-parser.add_argument("--max_seq_length", dest="max_seq_length", type=int, default=512)
+parser.add_argument("--test_data_percent", dest="test_data_percent", type=float, default=0.1)
+parser.add_argument("--max_seq_length", dest="max_seq_length", type=int, default=1024)
 parser.add_argument("--max_new_tokens", dest="max_new_tokens", type=int, default=5)
 parser.add_argument("--task", dest="task", type=str, default='TRAIN')
 parser.add_argument("--eval_model_name", dest="eval_model_name", type=str, default='')
@@ -88,15 +90,15 @@ parser.add_argument('--param_combination_file', dest='param_combination_file', t
 parser.add_argument('--loo_datasets', dest='loo_datasets', type=str, nargs='+',
                     default=['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews'])
 parser.add_argument('--leave_out', dest='leave_out', type=str, default='')
-parser.add_argument('--loo_seeds', dest='loo_seeds', type=int, nargs='+', default=[42])
 parser.add_argument('--loo_dataset_for_combs', dest='loo_dataset_for_combs', type=str, default='')
 parser.add_argument('--loo_comb_of_all_datasets', action=argparse.BooleanOptionalAction)
 
+parser.add_argument('--combined_datasets', dest='combined_datasets', type=str, nargs='+',
+                    default=[])
+
+
 args = parser.parse_args()
 # dataset_name = args.train_dataset
-
-dataset = load_dataset(args.train_dataset, instruction_version=args.instruction_version,
-                       percent=args.data_percent, add_instruction=True, with_val=False)
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -110,8 +112,15 @@ device_map = {"": 0}
 
 hf_access_token = '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'
 
-# TODO Mor: this line is for checking the memory usage. Remove it later
-OVERRIDE_BATCH_SIZE = False
+# Check if we're directly in Llama directory
+cwd = os.getcwd()
+current_dir = cwd.split('/')[-1]
+if current_dir == 'Llama-2':
+    REPO_ID_PREFIX = './Models/'
+elif current_dir == 'Scripts':
+    REPO_ID_PREFIX = '../Models/'
+else:
+    raise Exception('Please run the script from the Llama-2 or Scripts directory')
 
 
 def cuda_memory_status(code_location: str = ''):
@@ -146,7 +155,7 @@ def print_run_info(**kwargs):
     info_msgs.append('****')
 
     print('\n'.join(info_msgs))
-
+    
 
 def update_training_arguments(training_args, **kwargs):
     for key, value in kwargs.items():
@@ -190,9 +199,81 @@ def get_existing_combinations(df_combs, all_combs):
 
     return selected_combs, all_combs
 
+def get_past_runs_info(run_name, train_type):
+    pass
+
+    if os.path.exists('../Results'):
+        result_dir = f'../Results'
+    elif os.path.exists('Results'):
+        result_dir = f'Results'
+    else:
+        raise Exception('Results directory not found')
+
+    past_runs_filename = f'{result_dir}/{run_name}_past_runs.csv'
+    write_header = False if os.path.isfile(past_runs_filename) else True
+
+    with open(past_runs_filename, 'a') as past_runs_file:
+        if train_type == 'LOO':
+            writer = csv.DictWriter(past_runs_file,
+                                    fieldnames=['loo_dataset', 'comb_dataset', 'comb_num', 'seed',])
+        elif train_type == 'PAIR':
+            writer = csv.DictWriter(past_runs_file,
+                                    fieldnames=['pair_datasets', 'comb_dataset', 'comb_num', 'seed',])
+
+        if write_header:
+            writer.writeheader()
+
+    return pd.read_csv(past_runs_filename)
+
+def save_past_runs_info(df_past_runs_info, run_name):
+    if os.path.exists('../Results'):
+        result_dir = f'../Results'
+    elif os.path.exists('Results'):
+        result_dir = f'Results'
+    else:
+        raise Exception('Results directory not found')
+
+    past_runs_filename = f'{result_dir}/{run_name}_past_runs.csv'
+    df_past_runs_info.to_csv(past_runs_filename, index=False)
+
+def set_run_params(params, repo_id):
+    print(f"Training with hyperparameters: {params}")
+
+    # Check if we're directly in Llama directory
+    cwd = os.getcwd()
+    current_dir = cwd.split('/')[-1]
+    if current_dir == 'Llama-2':
+        prefix = './Models/'
+    elif current_dir == 'Scripts':
+        prefix = '../Models/'
+    else:
+        raise Exception('Please run the script from the Llama-2 or Scripts directory')
+
+    print(f'training {repo_id}')
+
+    # Define the training arguments
+    training_args = TrainingArguments(
+        output_dir=repo_id,
+        max_steps=params['max_steps'],
+        per_device_train_batch_size=params['per_device_train_batch_size'],
+        per_device_eval_batch_size=params['per_device_eval_batch_size'],
+        learning_rate=params['learning_rate'],
+        seed=params['seed'],
+        # hub_model_id=REPOSITORY_ID,
+        hub_token=HfFolder.get_token(),
+        gradient_accumulation_steps=4,
+        logging_steps=10,
+        report_to='none',
+        gradient_checkpointing=True,
+    )
+
+    # training_args = update_training_arguments(training_args, **training_args_update)
+    lora_args = {'rank': params['lora_rank'], 'alpha': params['lora_alpha']}
+
+    return training_args, lora_args
+
 
 def train_loo():
-    cuda_memory_status('Before LOO')
     # First, check that param_combination_file is exists
     if not args.param_combination_file:
         raise ValueError('Please provide a file with parameter combinations')
@@ -219,6 +300,7 @@ def train_loo():
 
     train_loo_name = 'LOO_' + args.leave_out
     combs_format_name = 'COMB_' + args.loo_dataset_for_combs if not args.loo_comb_of_all_datasets else 'ALL'
+
     df_combs = pd.read_csv(args.param_combination_file)
 
     data_dict = load_LOO_datasets(datasets=args.loo_datasets, add_intructions=True, with_val=False,
@@ -226,8 +308,9 @@ def train_loo():
     data_dict = load_current_LOO(train_names=args.loo_datasets, test_name=args.leave_out,
                                  all_datasets_dict=data_dict, with_val=False)
 
+    df_past_runs_info = get_past_runs_info(train_loo_name, train_type='LOO')
+
     print('Running Leave One out for dataset: ', args.leave_out)
-    iteration = 0
     for dataset_name in datasets_for_combs:
         print('Training on combinations of dataset: ', dataset_name)
 
@@ -236,62 +319,59 @@ def train_loo():
 
         for comb in curr_dataset_combs.iterrows():
             current_params = comb[1].to_dict()
+            # remove model name so that it won't override the current model name
+            current_params.pop('model_name', None)
 
             print(f'** Training comb #{current_params["top"]} **')
 
-            #TODO Mor: Remove these lines. just for debugging and small run
-            current_params['max_steps'] = 3
-            for seed in args.loo_seeds:
+            for seed in args.seeds:
                 print(f'** Training with seed = {seed} **')
 
-                iteration += 1
-                # Loop through the selected combinations
-                pass
+                curr_run_info = {'loo_dataset': args.leave_out,
+                                 'comb_dataset': dataset_name,
+                                 'comb_num': current_params['top'],
+                                 'seed': seed}
+
+                if ((df_past_runs_info[list(curr_run_info)] == pd.Series(curr_run_info)).all(axis=1)).any():
+                    print('~~ Combination and split already exists. ~~')
+                    print(curr_run_info)
+                    print('~~ Skipping to the next combination. ~~')
+                    continue
+
                 current_params['seed'] = seed
 
-                print(f"Training with hyperparameters: {current_params}")
+                # REPOSITORY_ID = f"{prefix}{args.base_model_name.split('/')[1]}-{train_loo_name}-{combs_format_name}-" \
+                #                 f"{datetime.now().date()}"
 
-                # Check if we're directly in Llama directory
-                cwd = os.getcwd()
-                current_dir = cwd.split('/')[-1]
-                if current_dir == 'Llama-2':
-                    prefix = './Models/'
-                elif current_dir == 'Scripts':
-                    prefix = '../Models/'
-                else:
-                    raise Exception('Please run the script from the Llama-2 or Scripts directory')
-
-                REPOSITORY_ID = f"{prefix}{args.base_model_name.split('/')[1]}-{train_loo_name}-{combs_format_name}-" \
+                REPOSITORY_ID = f"{REPO_ID_PREFIX}{args.base_model_name.split('/')[1]}" \
+                                 f"-{train_loo_name}-{combs_format_name}-" \
+                                f"comb{current_params['top']}-seed{seed}-NEW" \
                                 f"{datetime.now().date()}"
 
+                # Set the run parameters
+                training_args, lora_args = set_run_params(current_params, REPOSITORY_ID)
+                # print(f"Training with hyperparameters: {current_params}")
+                #
+                # # Define the training arguments
+                # training_args = TrainingArguments(
+                #     output_dir=REPOSITORY_ID,
+                #     max_steps=current_params['max_steps'],
+                #     per_device_train_batch_size=current_params['per_device_train_batch_size'],
+                #     per_device_eval_batch_size=current_params['per_device_eval_batch_size'],
+                #     learning_rate=current_params['learning_rate'],
+                #     seed=current_params['seed'],
+                #     # hub_model_id=REPOSITORY_ID,
+                #     hub_token=HfFolder.get_token(),
+                #     gradient_accumulation_steps=4,
+                #     logging_steps=10,
+                #     report_to='none',
+                #     gradient_checkpointing=True,
+                # )
+                #
+                # # training_args = update_training_arguments(training_args, **training_args_update)
+                # lora_args = {'rank': current_params['lora_rank'], 'alpha': current_params['lora_alpha']}
+
                 print(f'training {REPOSITORY_ID}')
-
-                if OVERRIDE_BATCH_SIZE:
-                    print('OVERRIDING BATCH SIZE')
-                    print('Training with batch size 1')
-                    current_params['per_device_train_batch_size'] = 1
-                    current_params['per_device_eval_batch_size'] = 1
-
-                # Define the training arguments
-                training_args = TrainingArguments(
-                    output_dir=REPOSITORY_ID,
-                    max_steps=current_params['max_steps'],
-                    per_device_train_batch_size=current_params['per_device_train_batch_size'],
-                    per_device_eval_batch_size=current_params['per_device_eval_batch_size'],
-                    learning_rate=current_params['learning_rate'],
-                    seed=current_params['seed'],
-                    # hub_model_id=REPOSITORY_ID,
-                    hub_token=HfFolder.get_token(),
-                    gradient_accumulation_steps=4,
-                    logging_steps=10,
-                    report_to='none',
-                    gradient_checkpointing=True,
-                )
-
-                # training_args = update_training_arguments(training_args, **training_args_update)
-                lora_args = {'rank': current_params['lora_rank'], 'alpha': current_params['lora_alpha']}
-
-                cuda_memory_status(f'Before training, iteration {iteration}')
                 train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
                             data_dict=data_dict, lora_args=lora_args, additional_run_args=current_params,
                             is_cross_val=False, train_dataset_name=train_loo_name,
@@ -300,8 +380,10 @@ def train_loo():
                 gc.collect()
                 torch.cuda.empty_cache()
                 gc.collect()
-                cuda_memory_status(f'After training, iteration {iteration}')
 
+                curr_run_info = {k: [v] for k, v in curr_run_info.items()}
+                df_past_runs_info = pd.concat([df_past_runs_info, pd.DataFrame(curr_run_info)], ignore_index=True)
+                save_past_runs_info(df_past_runs_info, train_loo_name)
 
 
 def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False,
@@ -347,6 +429,16 @@ def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False
         tokenizer.padding_side = "left"
         assert tokenizer.padding_side == "left"
 
+        # TODO Mor: my additions, remove it later
+        # backup_model = model
+        # from peft import PeftModel
+        # peft_model = get_peft_model(model, model.peft_config['default'])
+        # trainer = SFTTrainer(model=model, dataset_text_field='instruction', max_seq_length=1024,
+                             # peft_config=model.peft_config['default'])
+
+        # print(f'backup_model == trainer.model: {backup_model == trainer.model}')
+
+
         for eval_dataset_name in eval_datasets:
             start_eval_time = time.time()
             if is_cross_eval:
@@ -357,24 +449,23 @@ def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False
                 train_indices, test_indices = list(kf.split(dataset['instruction'], dataset['label']))[cv_split_num]
                 # train = Dataset.from_pandas(dataset.iloc[train_indices])
                 test = Dataset.from_pandas(dataset.iloc[test_indices])
-
-                # If it's a different dataset, sample 10% of the test set for validation
-                if eval_dataset_name != train_dataset_name:
-                    test = test.class_encode_column("label")
-                    test = test.train_test_split(test_size=0.1, seed=42, stratify_by_column='label')['test']
+                test = test.class_encode_column("label")
+                test = test.train_test_split(test_size=0.1, seed=42, stratify_by_column='label')['test']
 
                 curr_dataset = DatasetDict()
                 curr_dataset['train'] = None
                 curr_dataset['test'] = test
 
-            # if data_dict:
-            #     print('Using data_dict')
-            #     from copy import deepcopy
-            #     curr_dataset = deepcopy(data_dict)
-            #     assert len(eval_datasets) == 1, "Only one dataset should be provided when using data_dict"
             else:
+                # pay attention I changed the percent to test data percent
+                # actually test_data_percent here is used as the validation test.
+                # According to this we will choose parameters and model
+                # When we evaluate it will be 10%, and when we compute the real model it will be 90%
+
                 curr_dataset = load_dataset(eval_dataset_name, instruction_version=args.instruction_version,
-                                            percent=args.data_percent, add_instruction=True, with_val=False)
+                                            test_percent=args.test_data_percent, add_instruction=True, with_val=False,
+                                            percent=args.data_percent)
+
             split = 'test'
 
             print(f'@@@ Evaluating on {eval_dataset_name} dataset. Examples count = {len(curr_dataset[split])} @@@')
@@ -413,83 +504,91 @@ def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False
                     return 'No'
                 return 'Illegal'
 
-            true_labels = curr_dataset[split].map(get_response)
+            # TODO Mor: remove it later
+            for i, curr_model in enumerate([model]):
+                print(f'*** Model {"Backup" if i == 0 else "trainer.model"} ***')
 
-            # Remove the response from the instruction (If there is one)
-            curr_dataset[split] = curr_dataset[split].map(remove_response)
+                true_labels = curr_dataset[split].map(get_response)
 
-            true_labels = [true_labels[i]['text label'] for i in range(len(true_labels))]
-            texts = [curr_dataset[split][i]['instruction'] for i in range(len(curr_dataset[split]))]
+                # Remove the response from the instruction (If there is one)
+                curr_dataset[split] = curr_dataset[split].map(remove_response)
 
-            inference_batch_size = args.inference_batch_size
-            all_responses = []
-            prediction_list, label_list = [], []
+                true_labels = [true_labels[i]['text label'] for i in range(len(true_labels))]
+                texts = [curr_dataset[split][i]['instruction'] for i in range(len(curr_dataset[split]))]
 
-            for i in range(0, len(texts), inference_batch_size):
-                batch_texts = texts[i: i + inference_batch_size]
-                batch_labels = true_labels[i: i + inference_batch_size]
-                inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
-                outputs = model.generate(input_ids=inputs["input_ids"].to("cuda"),
-                                         attention_mask=inputs["attention_mask"],
-                                         max_new_tokens=args.max_new_tokens,
-                                         pad_token_id=tokenizer.eos_token_id)
+                inference_batch_size = args.inference_batch_size
+                all_responses = []
+                prediction_list, label_list = [], []
 
-                responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
-                all_responses.extend(responses)
-                batch_predictions = [get_prediction(response) for response in responses]
-                prediction_list.extend(batch_predictions)
-                label_list.extend(batch_labels)
+                for i in range(0, len(texts), inference_batch_size):
+                    batch_texts = texts[i: i + inference_batch_size]
+                    batch_labels = true_labels[i: i + inference_batch_size]
+                    inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to("cuda")
+                    #TODO Mor: remove it later
+                    # outputs = model.generate(input_ids=inputs["input_ids"].to("cuda"),
+                    #                          attention_mask=inputs["attention_mask"],
+                    #                          max_new_tokens=args.max_new_tokens,
+                    #                          pad_token_id=tokenizer.eos_token_id)
+                    outputs = curr_model.generate(input_ids=inputs["input_ids"].to("cuda"),
+                                             attention_mask=inputs["attention_mask"],
+                                             max_new_tokens=args.max_new_tokens,
+                                             pad_token_id=tokenizer.eos_token_id)
 
-            prediction_list_int = [1 if prediction == 'Yes' else
-                                   0 if prediction == 'No'
-                                   else -1
-                                   for prediction in prediction_list]
+                    responses = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
+                    all_responses.extend(responses)
+                    batch_predictions = [get_prediction(response) for response in responses]
+                    prediction_list.extend(batch_predictions)
+                    label_list.extend(batch_labels)
 
-            label_list_int = [1 if prediction == 'Yes' else
-                              0 if prediction == 'No'
-                              else -1
-                              for prediction in label_list]
+                prediction_list_int = [1 if prediction == 'Yes' else
+                                       0 if prediction == 'No'
+                                       else -1
+                                       for prediction in prediction_list]
 
-            # Remove illegal predictions
-            illegal_indices = [i for i, val in enumerate(prediction_list_int) if val == -1]
-            if illegal_indices:
-                print(f'Illegal predictions found in {len(illegal_indices)} examples')
-                for index in illegal_indices[::-1]:
-                    prediction_list_int.pop(index)
-                    label_list_int.pop(index)
+                label_list_int = [1 if prediction == 'Yes' else
+                                  0 if prediction == 'No'
+                                  else -1
+                                  for prediction in label_list]
 
-            if '/' in eval_model_name:
-                model_name_idx = len(eval_model_name) - eval_model_name[::-1].index('/')
-                only_model_name = eval_model_name[model_name_idx:]
-            else:
-                only_model_name = eval_model_name
+                # Remove illegal predictions
+                illegal_indices = [i for i, val in enumerate(prediction_list_int) if val == -1]
+                if illegal_indices:
+                    print(f'Illegal predictions found in {len(illegal_indices)} examples')
+                    for index in illegal_indices[::-1]:
+                        prediction_list_int.pop(index)
+                        label_list_int.pop(index)
 
-            if os.path.exists('../Results'):
-                output_dir = f'../Results/{only_model_name}'
-            elif os.path.exists('Results'):
-                output_dir = f'Results/{only_model_name}'
-            else:
-                output_dir = f'{only_model_name}'
-            os.makedirs(output_dir, exist_ok=True)
+                if '/' in eval_model_name:
+                    model_name_idx = len(eval_model_name) - eval_model_name[::-1].index('/')
+                    only_model_name = eval_model_name[model_name_idx:]
+                else:
+                    only_model_name = eval_model_name
 
-            run_args = {'train_dataset': train_dataset_name,
-                        'evaluate_dataset': eval_dataset_name,
-                        'model_name': only_model_name,
-                        'save_dir': output_dir}
+                if os.path.exists('../Results'):
+                    output_dir = f'../Results/{only_model_name}'
+                elif os.path.exists('Results'):
+                    output_dir = f'Results/{only_model_name}'
+                else:
+                    output_dir = f'{only_model_name}'
+                os.makedirs(output_dir, exist_ok=True)
 
-            run_args.update(additional_run_args)
+                run_args = {'train_dataset': train_dataset_name,
+                            'evaluate_dataset': eval_dataset_name,
+                            'model_name': only_model_name,
+                            'save_dir': output_dir}
 
-            create_report(label_list_int, prediction_list_int, run_args, pos_label=1)
+                run_args.update(additional_run_args)
+
+                create_report(label_list_int, prediction_list_int, run_args, pos_label=1)
 
             curr_dataset[split] = curr_dataset[split].add_column("prediction", prediction_list)
             curr_dataset[split].to_csv(f'{output_dir}/{eval_dataset_name}_predictions.csv')
 
-            with open(f'{output_dir}/instruction_results.txt', 'a') as f:
-                f.write(f'@@@ {eval_dataset_name} results')
-                for i in range(len(all_responses)):
-                    f.write(
-                        f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
-                    # print(f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
+            # with open(f'{output_dir}/instruction_results.txt', 'a') as f:
+            #     f.write(f'@@@ {eval_dataset_name} results')
+            #     for i in range(len(all_responses)):
+            #         f.write(
+            #             f'*** {i} ***\ntext true response:\n{true_labels[i]}\nmodel output:\n{all_responses[i]}\n\n')
 
             end_eval_time = time.time()
             print(f'Evaluation on {eval_dataset_name} took {(end_eval_time - start_eval_time) / 60} minutes')
@@ -501,9 +600,85 @@ def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False
     gc.collect()
     torch.cuda.empty_cache()
 
+def train_combined_dataset():
+    # First, check that param_combination_file is exists
+    if not args.param_combination_file:
+        raise ValueError('Please provide a file with parameter combinations')
+
+    if not args.combined_datasets:
+        raise ValueError('Please provide list of datasets to combine')
+
+    if len(args.combined_datasets) == 1:
+        raise ValueError('Please provide at least two datasets to combine')
+    elif len(args.combined_datasets) == 2:
+        combination_type = 'PAIR'
+    elif len(args.combined_datasets) == 3:
+        combination_type = 'TRIO'
+
+    train_combined_name = f'{combination_type}_' + '_'.join(args.combined_datasets)
+
+    df_combs = pd.read_csv(args.param_combination_file)
+
+    data_dict = load_combined_dataset(datasets_names=args.combined_datasets, add_instruction=True,
+                                      instruction_version=0, percent=args.data_percent)
+
+    df_past_runs_info = get_past_runs_info(train_combined_name, train_type=combination_type)
+
+    print('Running Combined Training for datasets: ', ', '.join(args.combined_datasets))
+    for comb_dataset_name in args.combined_datasets:
+        print('Training on combinations of dataset: ', comb_dataset_name)
+
+        # Get the combinations for this dataset
+        curr_dataset_combs = df_combs[df_combs['dataset'] == comb_dataset_name]
+
+        for comb in curr_dataset_combs.iterrows():
+            current_params = comb[1].to_dict()
+            # remove model name so that it won't override the current model name
+            current_params.pop('model_name', None)
+
+            print(f'** Training comb #{current_params["top"]} **')
+
+            for seed in args.seeds:
+                print(f'** Training with seed = {seed} **')
+
+                curr_run_info = {'pair_datasets': train_combined_name,
+                                 'comb_dataset': comb_dataset_name,
+                                 'comb_num': current_params['top'],
+                                 'seed': seed}
+
+                if ((df_past_runs_info[list(curr_run_info)] == pd.Series(curr_run_info)).all(axis=1)).any():
+                    print('~~ Combination and split already exists. ~~')
+                    print(curr_run_info)
+                    print('~~ Skipping to the next combination. ~~')
+                    continue
+
+                current_params['seed'] = seed
+
+                REPOSITORY_ID = f"{REPO_ID_PREFIX}{args.base_model_name.split('/')[1]}" \
+                                f"-{train_combined_name}-COMB-{comb_dataset_name}-" \
+                                f"comb-{current_params['top']}-seed-{seed}-" \
+                                f"{datetime.now().date()}"
+
+                # Set the run parameters
+                training_args, lora_args = set_run_params(current_params, REPOSITORY_ID)
+
+                print(f'training {REPOSITORY_ID}')
+                train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
+                            data_dict=data_dict, lora_args=lora_args, additional_run_args=current_params,
+                            is_cross_val=False, train_dataset_name=train_combined_name,
+                            eval_datasets_names=args.eval_datasets)
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
+                gc.collect()
+
+                curr_run_info = {k: [v] for k, v in curr_run_info.items()}
+                df_past_runs_info = pd.concat([df_past_runs_info, pd.DataFrame(curr_run_info)], ignore_index=True)
+                save_past_runs_info(df_past_runs_info, train_combined_name)
 
 def train_llama_hyperparams():
     # Load cross-validation splits
+    # note to self: think of which instruction id to send (None or 0)
     dataset, kf = load_cv_dataset(num_of_split=4, dataset_name=args.train_dataset,
                                   percent=args.data_percent, add_instruction=True,
                                   with_val=False)
@@ -526,9 +701,7 @@ def train_llama_hyperparams():
     n_iter = 45
     # n_iter = 1
 
-    # TODO Mor: Changing df_all_combs to empty for debugging, change back to load from function
     df_all_combs = create_combinations_file(args.train_dataset)
-    # df_all_combs = pd.DataFrame()
 
     if not df_all_combs.empty:
         # Count the number of combinations used for the first split
@@ -663,33 +836,71 @@ def create_combinations_file(dataset_name):
     return df_all_combs
 
 
+def train_loo_with_few():
+    if not args.leave_out:
+        raise ValueError('Please provide a dataset to leave out')
+    if not args.param_combination_file:
+        raise ValueError('Please provide a file with parameter combinations')
+
+    train_loo_name = 'LOO_' + args.leave_out
+    train_loo_few_name = 'LOO_WITH_FEW_' + args.leave_out
+
+    # Get model name and params of best model of loo dataset
+    df_combs = pd.read_csv(args.param_combination_file)
+    df_combs = df_combs[df_combs['dataset'] == train_loo_name]
+    df_combs = df_combs[df_combs['top'] == 1]
+
+    train_comb_params = df_combs.iloc[0].to_dict()
+    # remove model name so that it won't override the current model name
+    train_comb_params.pop('model_name', None)
+
+    # load dataset, only 20 samples for the train
+    data_dict = load_LOO_datasets(datasets=args.loo_datasets, add_intructions=True, with_val=False,
+                                  data_percent=args.data_percent)
+    data_dict = load_current_LOO(train_names=args.loo_datasets, test_name=args.leave_out,
+                                 all_datasets_dict=data_dict, with_val=False, loo_with_few=True)
+
+    print('Running Leave One Out + Few for dataset: ', args.leave_out)
+
+    for seed in args.seeds:
+        print(f'** Training with seed = {seed} **')
+        train_comb_params['seed'] = seed
+
+        REPOSITORY_ID = f"{REPO_ID_PREFIX}{args.base_model_name.split('/')[1]}" \
+                        f"-{train_loo_few_name}" \
+                        f"-seed{seed}" \
+                        f"-{datetime.now().date()}"
+
+        # Set the run parameters
+        training_args, lora_args = set_run_params(train_comb_params, REPOSITORY_ID)
+
+        print(f'training {REPOSITORY_ID}')
+        train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
+                    data_dict=data_dict, lora_args=lora_args, additional_run_args=train_comb_params,
+                    is_cross_val=False, train_dataset_name=train_loo_few_name)
+
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
+        gc.collect()
+
+
+
 def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=None,
                 additional_run_args={}, is_cross_val=False, cv_split_num=None,
-                train_dataset_name=None, model_name=None, eval_datasets_names=None):
-    if not train_dataset_name:
-        train_dataset_name = args.train_dataset
-
-    if not model_name:
-        model_name = args.base_model_name
-
-    if not eval_datasets_names:
-        eval_datasets_names = args.eval_datasets
+                train_dataset_name=args.train_dataset,
+                model_name=args.base_model_name, eval_datasets_names=args.eval_datasets):
 
     print(f'^^^^  Training {model_name} on {train_dataset_name} ^^^^')
-    print(f'^^^ output dir = {output_dir} ^^^')
     train_start_time = time.time()
 
-    train_args = {'num_of_epochs': 20,
-                  'max_steps': args.max_steps,
-                  'train_dataset': train_dataset_name,
-                  'train_size': len(dataset["train"]),
-                  'train_batch_size': args.train_batch_size,
-                  'inference_batch_size': args.inference_batch_size,
-                  'max_seq_length': args.max_seq_length,
-                  }
+    if not output_dir:
+        output_dir = f"{REPO_ID_PREFIX}{model_name.split('/')[1]}" \
+                    f"-{train_dataset_name}-" \
+                    f"seed-{args.seeds[0]}-" \
+                    f"{datetime.now().date()}"
 
-    if not training_args:
-        print_run_info(**train_args)
+    print(f'^^^ output dir = {output_dir} ^^^')
 
     base_model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -698,13 +909,35 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
         trust_remote_code=True,
         # use_auth_token=True,
         token=hf_access_token,
-        cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
+        cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache2/",
         # config=config,
     )
     base_model.config.use_cache = False
 
     # More info: https://github.com/huggingface/transformers/pull/24906
     base_model.config.pretraining_tp = 1
+
+    if not training_args:
+        assert len(args.seeds) == 1
+        assert len(args.learning_rates) == 1
+        assert len(args.batch_sizes) == 1
+        assert len(args.num_steps) == 1
+        assert len(args.lora_ranks) == 1
+        assert len(args.lora_alpha) == 1
+
+        print('** Loading training arguments from command line arguments **')
+        # Set the run parameters
+        current_params = {
+            'seed': args.seeds[0],
+            'learning_rate': args.learning_rates[0],
+            'per_device_train_batch_size': args.batch_sizes[0],
+            'per_device_eval_batch_size': args.batch_sizes[0],
+            'max_steps': args.num_steps[0],
+            'lora_rank': args.lora_ranks[0],
+            'lora_alpha': args.lora_alpha[0],
+        }
+
+        training_args, lora_args = set_run_params(current_params, output_dir)
 
     peft_config = LoraConfig(
         lora_alpha=16 if not lora_args else lora_args['alpha'],
@@ -720,29 +953,20 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
                                               cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/")
     tokenizer.pad_token = tokenizer.eos_token
 
-    if not output_dir:
-        output_dir = f"../Models/{model_name.split('/')[1]}-{train_dataset_name}-" \
-                     f"{datetime.now().date()}"
-
-    if not training_args:
-        training_args = TrainingArguments(
-            output_dir=output_dir,
-            per_device_train_batch_size=train_args['train_batch_size'],
-            gradient_accumulation_steps=4,
-            learning_rate=2e-4,
-            logging_steps=10,
-            max_steps=train_args['max_steps'],
-            report_to='none',
-            num_train_epochs=train_args['num_of_epochs'],
-            gradient_checkpointing=True,
-        )
-
     # Change padding side to right for training
     tokenizer.padding_side = "right"
     assert tokenizer.padding_side == "right"
 
-    train_dataset = dataset['train'] if data_dict is None else data_dict['train']
-    print('$$$ Training on dataset with size:', len(train_dataset))
+    if data_dict:
+        train_dataset = data_dict['train']
+    else:
+        dataset = load_dataset(args.train_dataset, instruction_version=args.instruction_version,
+                               percent=args.data_percent, add_instruction=True, with_val=False)
+        train_dataset = dataset['train']
+
+    # train_dataset = dataset['train'] if data_dict is None else data_dict['train']
+    print('$$$ Training on dataset with size:', len(train_dataset), '$$$')
+    print(f'&&& max seq length = {args.max_seq_length} &&&')
 
     trainer = SFTTrainer(
         model=base_model,
@@ -750,7 +974,7 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
         train_dataset=train_dataset,
         peft_config=peft_config,
         dataset_text_field="instruction",
-        max_seq_length=train_args['max_seq_length'],
+        max_seq_length=args.max_seq_length,
         tokenizer=tokenizer,
         args=training_args,
     )
@@ -763,6 +987,7 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
     print('&&&&&&&&&&&&&&&&&&&&&')
 
     # output_dir = os.path.join(output_dir, "final_checkpoint")
+
     trainer.model.save_pretrained(output_dir)
     trainer.create_model_card()
     trainer.push_to_hub(token=hf_access_token)
@@ -791,28 +1016,6 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
     gc.collect()
 
 
-def mor_check():
-    ## Checking jsonl files comparing to regular data. They are the same. checked on 2024-09-11
-    # name = 'headlines'
-    #
-    # dataset, kf = load_cv_dataset(num_of_split=4, dataset_name=name,
-    #                               percent=100, add_instruction=True,
-    #                               with_val=False)
-    #
-    # for split_num, split_indices in enumerate(kf.split(dataset['instruction'], dataset['label'])):
-    #     print('Training on split number:', split_num)
-    #     train_split, test_split = split_indices
-    #     train = dataset.iloc[train_split]
-    #     test = dataset.iloc[test_split]
-    #     test_json = pd.read_json(f'/cs/labs/dshahaf/mortur/HumorNLP_/Data/new_humor_datasets/balanced/{name}/Json/CV_Splits/Split_{split_num}/test.jsonl', lines=True)
-
-
-    ## Check leave one out data loading
-    datasets = ['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews']
-    data_dict = load_LOO_datasets(datasets, add_intructions=True, with_val=False)
-    pass
-
-
 if __name__ == '__main__':
     if args.task == 'TRAIN':
         train_llama()
@@ -825,3 +1028,12 @@ if __name__ == '__main__':
 
     if args.task == 'LOO':
         train_loo()
+
+    if args.task == 'LOO_WITH_FEW':
+        train_loo_with_few()
+
+    if args.task == 'COMBINED':
+        train_combined_dataset()
+
+    if args.task == '':
+        print('Nothing were given to do. Please provide a task to do.')
