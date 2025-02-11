@@ -1,0 +1,16 @@
+dataset,param_metric,top,seed,learning_rate,per_device_train_batch_size,per_device_eval_batch_size,max_steps,lora_rank,lora_alpha
+amazon,best_median,1,42,0.0003,2,2,150,32,8
+amazon,best_median,2,42,0.0003,2,2,150,64,32
+amazon,best_median,3,42,0.0003,2,2,150,128,8
+dadjokes,best_median,1,42,0.0003,4,4,200,32,8
+dadjokes,best_median,2,42,0.0003,4,4,150,128,8
+dadjokes,best_median,3,42,5e-05,4,4,200,32,64
+headlines,best_median,1,42,0.0003,2,2,150,32,16
+headlines,best_median,2,42,0.0003,2,2,200,32,16
+headlines,best_median,3,42,5e-05,2,2,200,128,32
+one_liners,best_median,1,42,5e-05,4,4,200,128,8
+one_liners,best_median,2,42,0.0003,4,4,200,64,64
+one_liners,best_median,3,42,5e-05,4,4,150,64,16
+yelp_reviews,best_median,1,42,5e-05,1,1,150,128,32
+yelp_reviews,best_median,2,42,5e-05,1,1,200,128,16
+yelp_reviews,best_median,3,42,5e-05,1,1,150,64,32
