@@ -110,7 +110,15 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
     # Actually use as evaluation set, when want to run many parameters and save test evaluation
     # Usually, test_percent = 0.1
     if test_percent:
-        test = test.train_test_split(test_size=test_percent, seed=42, stratify_by_column='label')['test']
+        split_to_take = 'test'
+        # TODO Mor: not the best soultion, but the quickest. pay attention to it.
+        # if test_percent is 0.9, wer'e running on real test, and not on validation
+        if test_percent == 0.9:
+            test_percent = 0.1
+            split_to_take = 'train'
+            print('***', 'Running on real test set', '***', sep='\n')
+
+        test = test.train_test_split(test_size=test_percent, seed=42, stratify_by_column='label')[split_to_take]
 
     if add_instruction:
         train = train.map(add_response)

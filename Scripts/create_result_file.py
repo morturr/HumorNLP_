@@ -11,12 +11,22 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--experiment_type", dest="experiment_type", type=str, required=True)
+parser.add_argument("--use_model", dest="use_model", type=str, required=True)
 
 args = parser.parse_args()
 
 # USE_MODEL = 'Llama-2'
-USE_MODEL = 'Mistral'
+# USE_MODEL = 'Mistral'
+USE_MODEL = args.use_model
+
 PATH = f'../{USE_MODEL}/Results'
+TABLES_PATH = PATH + '/Tables/'
+
+FINAL_RESULTS_PATH = PATH + '/Final Results'
+FINAL_RESULTS_TABLES_PATH = TABLES_PATH + 'Final Tables/'
+PATH = FINAL_RESULTS_PATH
+TABLES_PATH = FINAL_RESULTS_TABLES_PATH
+
 
 # # path for hyperparameter results
 # HYPERPARAMS_PATH = PATH + '/Hyperparameter search'
@@ -99,7 +109,7 @@ def init_config():
 
 init_config()
 
-TABLES_PATH = PATH + '/Tables/'
+
 
 METRICS = ['accuracy', 'f1', 'recall', 'precision']
 
@@ -233,7 +243,10 @@ def get_avg_single_df(df: pd.DataFrame, average_by: str) -> pd.DataFrame:
     # Columns you want to average the scores for
     columns_to_average = ['accuracy', 'precision', 'recall', 'f1']
 
+
+    #TODO Mor For Final: comment the command below and comment out two rows below beacuse final files don't have params
     for params, rows in df.groupby(by=PARAMS_COLUMN_NAMES):
+    # for rows in [df]: ## for final files who don't have params
         if len(rows) != 20:
             print(f'Error in dataset {rows.iloc[0]["train_dataset"]}:\n'
                   f' Expected 20 rows for params {params}, got {len(rows)}')
@@ -282,9 +295,6 @@ def get_avg_df_all(df: pd.DataFrame, average_by: str) -> pd.DataFrame:
     :return: df_avg_all - a dataframe with the average over all the cross validation splits or seeds results
     """
 
-    # # TODO Mor: taking only split num 0 for now, remove later
-    # df = df[df['split_num'] == 0]
-
     df_avg_all = pd.DataFrame()
     for dataset_name in TRAIN_DATASETS:
         # for each dataset separately,
@@ -292,6 +302,7 @@ def get_avg_df_all(df: pd.DataFrame, average_by: str) -> pd.DataFrame:
         # set the parameters as the index as all the cv splits need to be averaged by the same parameters
         df_curr_trained = df[(df['train_dataset'] == dataset_name)]
 
+        # TODO Mor For Final: comment command below because no params in final files
         df_curr_trained.set_index(PARAMS_COLUMN_NAMES, inplace=True)
 
         try:
@@ -347,6 +358,12 @@ def save_best_accuracies(result_param_df: pd.DataFrame, df_trained: pd.DataFrame
 
     # Iterate over the best accuracies and save all of them
     # calculate metrics' mean and std for all pairs of datasets
+    # TODO Mor For Final:  replace commented code with below (until metrics_dict=)
+    #  because final results don't have params and best accs
+    # for _ in range(1): # for final
+    #     df_of_params = df_trained
+    #     metrics_dict = {metric_name: {} for metric_name in METRICS}
+    #     acc_selection_mertic = 'final results'
     for acc_selection_mertic, acc_and_params in best_accs.items():
         params = acc_and_params[1]
 
@@ -428,17 +445,22 @@ def create_accuracy_top_params_all_datasets(result_param_df: pd.DataFrame, df_av
         df_curr_trained = df_averages[(df_averages['train_dataset'] == dataset_name)]
 
         # Return two parameters: dictionary of all params & accuracies, and dictionary of the best accuracies
-        # TODO Mor: change to get all best, and take the best by trained accuracy
+        # TODO Mor For Final: comment the commands below because final results don't have params and best accs
+        # # TODO Mor: change to get all best, and take the best by trained accuracy
         accs_and_best_accs = find_best_accuracies(df_curr_trained, dataset_name, which_best='Median')
-        # accs_and_best_accs = find_best_accuracies(df_curr_trained, dataset_name, which_best='All')
+        # # accs_and_best_accs = find_best_accuracies(df_curr_trained, dataset_name, which_best='All')
 
         all_accs = accs_and_best_accs[0]
         best_accs = accs_and_best_accs[1]
 
+        # TODO Mor For Final: replace the command below because final results don't have params and best accs
+        # save_best_accuracies(result_param_df, df_curr_trained, dataset_name, None) # for final
         save_best_accuracies(result_param_df, df_curr_trained, dataset_name, best_accs)
         curr_dataset_top_params = get_top_params(df_curr_trained, dataset_name, best_accs, all_accs)
         all_top_params.extend(curr_dataset_top_params)
 
+    # TODO Mor For Final: comment the code below because final results don't have params
+    # return pd.DataFrame() # for final
     top_params_df = pd.DataFrame(all_top_params)
     top_params_df.set_index(['dataset', 'param_metric', 'top'], inplace=True)
     return top_params_df

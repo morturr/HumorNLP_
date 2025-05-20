@@ -60,10 +60,22 @@ from sklearn.metrics import (
 import os
 import GPUtil
 
+
+cwd = os.getcwd()
+current_dir, dir_above = cwd.split('/')[-1], cwd.split('/')[-2]
+if current_dir == 'Llama-2' or dir_above == 'Llama-2':
+    BASE_MODEL_NAME = 'Llama-2'
+    base_model_name_default = "meta-llama/Llama-2-7b-hf"
+elif current_dir == 'Mistral' or dir_above == 'Mistral':
+    BASE_MODEL_NAME = 'Mistral'
+    base_model_name_default = "mistralai/Mistral-7B-v0.1"
+else:
+    raise Exception('Please run the script from the Llama-2 or Mistral directory')
+
 from datetime import datetime
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--train_dataset", dest="train_dataset", type=str, required=True)
+parser.add_argument("--train_dataset", dest="train_dataset", type=str)#, required=True)
 parser.add_argument("--eval_datasets", dest="eval_datasets", type=str,
                     nargs='+', default=['amazon', 'dadjokes', 'headlines',
                                         'one_liners', 'yelp_reviews'])
@@ -112,15 +124,15 @@ device_map = {"": 0}
 
 hf_access_token = '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'
 
-# Check if we're directly in Llama directory
+# Check if we're directly in Llama/Mistral directory
 cwd = os.getcwd()
 current_dir = cwd.split('/')[-1]
-if current_dir == 'Llama-2':
+if current_dir == 'Llama-2' or current_dir == 'Mistral':
     REPO_ID_PREFIX = './Models/'
 elif current_dir == 'Scripts':
     REPO_ID_PREFIX = '../Models/'
 else:
-    raise Exception('Please run the script from the Llama-2 or Scripts directory')
+    raise Exception('Please run the script from the Llama-2/Mistral or Scripts directory')
 
 
 def cuda_memory_status(code_location: str = ''):
@@ -176,7 +188,7 @@ def init_model_wrapper(model_name):
             trust_remote_code=True,
             # use_auth_token=True,
             token=hf_access_token,
-            cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
+            cache_dir=f"/cs/labs/dshahaf/mortur/HumorNLP_/{BASE_MODEL_NAME}/Cache/",
             # config=config,
         )
         base_model.config.use_cache = False
@@ -238,16 +250,6 @@ def save_past_runs_info(df_past_runs_info, run_name):
 
 def set_run_params(params, repo_id):
     print(f"Training with hyperparameters: {params}")
-
-    # Check if we're directly in Llama directory
-    cwd = os.getcwd()
-    current_dir = cwd.split('/')[-1]
-    if current_dir == 'Llama-2':
-        prefix = './Models/'
-    elif current_dir == 'Scripts':
-        prefix = '../Models/'
-    else:
-        raise Exception('Please run the script from the Llama-2 or Scripts directory')
 
     print(f'training {repo_id}')
 
@@ -372,7 +374,7 @@ def train_loo():
                 # lora_args = {'rank': current_params['lora_rank'], 'alpha': current_params['lora_alpha']}
 
                 print(f'training {REPOSITORY_ID}')
-                train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
+                _train(output_dir=REPOSITORY_ID, training_args=training_args,
                             data_dict=data_dict, lora_args=lora_args, additional_run_args=current_params,
                             is_cross_val=False, train_dataset_name=train_loo_name,
                             eval_datasets_names=args.loo_datasets)
@@ -386,7 +388,7 @@ def train_loo():
                 save_past_runs_info(df_past_runs_info, train_loo_name)
 
 
-def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False,
+def evaluate(eval_params=None, additional_run_args={}, is_cross_eval=False,
                    cv_split_num=None):
     with torch.no_grad():
         if eval_params:
@@ -416,14 +418,14 @@ def evaluate_llama(eval_params=None, additional_run_args={}, is_cross_eval=False
                 trust_remote_code=True,
                 # use_auth_token=True,
                 token=hf_access_token,
-                cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/",
+                cache_dir=f"/cs/labs/dshahaf/mortur/HumorNLP_/{BASE_MODEL_NAME}/Cache/",
                 # config=config,
             )
 
             tokenizer = AutoTokenizer.from_pretrained(args.eval_model_name,
                                                       trust_remote_code=True,
                                                       token=hf_access_token,
-                                                      cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/")
+                                                      cache_dir=f"/cs/labs/dshahaf/mortur/HumorNLP_/{BASE_MODEL_NAME}/Cache/")
 
         # Change padding side to left for inference
         tokenizer.padding_side = "left"
@@ -663,7 +665,7 @@ def train_combined_dataset():
                 training_args, lora_args = set_run_params(current_params, REPOSITORY_ID)
 
                 print(f'training {REPOSITORY_ID}')
-                train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
+                _train(output_dir=REPOSITORY_ID, training_args=training_args,
                             data_dict=data_dict, lora_args=lora_args, additional_run_args=current_params,
                             is_cross_val=False, train_dataset_name=train_combined_name,
                             eval_datasets_names=args.eval_datasets)
@@ -676,7 +678,7 @@ def train_combined_dataset():
                 df_past_runs_info = pd.concat([df_past_runs_info, pd.DataFrame(curr_run_info)], ignore_index=True)
                 save_past_runs_info(df_past_runs_info, train_combined_name)
 
-def train_llama_hyperparams():
+def train_hyperparams():
     # Load cross-validation splits
     # note to self: think of which instruction id to send (None or 0)
     dataset, kf = load_cv_dataset(num_of_split=4, dataset_name=args.train_dataset,
@@ -697,9 +699,7 @@ def train_llama_hyperparams():
     all_combinations = list(product(*param_grid.values()))
     random.shuffle(all_combinations)
 
-    # TODO Mor: Changing n_iter to 1 for debugging, change back to 45
     n_iter = 45
-    # n_iter = 1
 
     df_all_combs = create_combinations_file(args.train_dataset)
 
@@ -729,7 +729,6 @@ def train_llama_hyperparams():
 
         # Loop through the selected combinations
         for comb_id, params in enumerate(selected_combinations):
-            start_time = time.time()
             current_params = dict(zip(param_grid.keys(), params))
             print(f'Combination {comb_id + 1}/{n_iter}')
             print(f"Training with hyperparameters: {current_params}")
@@ -743,17 +742,7 @@ def train_llama_hyperparams():
                 print('~~ Skipping to the next combination. ~~')
                 continue
 
-            # Check if we're directly in Llama directory
-            cwd = os.getcwd()
-            current_dir = cwd.split('/')[-1]
-            if current_dir == 'Llama-2':
-                prefix = './Models/'
-            elif current_dir == 'Scripts':
-                prefix = '../Models/'
-            else:
-                raise Exception('Please run the script from the Llama-2 or Scripts directory')
-
-            REPOSITORY_ID = f"{prefix}{args.base_model_name.split('/')[1]}-{args.train_dataset}-" \
+            REPOSITORY_ID = f"{REPO_ID_PREFIX}{args.base_model_name.split('/')[1]}-{args.train_dataset}-" \
                             f"{datetime.now().date()}"
 
             print(f'training {REPOSITORY_ID}')
@@ -774,25 +763,13 @@ def train_llama_hyperparams():
                 gradient_checkpointing=True,
             )
 
-            # training_args_update = {
-            #     "max_steps": params['max_steps'],
-            #     "per_device_train_batch_size": params['per_device_train_batch_size'],
-            #     'per_device_eval_batch_size': params['per_device_eval_batch_size'],
-            #     'learning_rate': params['learning_rate'],
-            #     'seed': params['seed'],
-            #     'output_dir': REPOSITORY_ID,
-            #     'hub_model_id': REPOSITORY_ID,
-            #     'hub_token': HfFolder.get_token()
-            # }
-
-            # training_args = update_training_arguments(training_args, **training_args_update)
             lora_args = {'rank': current_params['lora_rank'], 'alpha': current_params['lora_alpha']}
 
             from copy import deepcopy
             additional_run_args = deepcopy(current_params)
             additional_run_args['split_num'] = split_num
 
-            train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
+            _train(output_dir=REPOSITORY_ID, training_args=training_args,
                         data_dict=data_dict, lora_args=lora_args, additional_run_args=additional_run_args,
                         is_cross_val=True, cv_split_num=split_num)
 
@@ -875,7 +852,7 @@ def train_loo_with_few():
         training_args, lora_args = set_run_params(train_comb_params, REPOSITORY_ID)
 
         print(f'training {REPOSITORY_ID}')
-        train_llama(output_dir=REPOSITORY_ID, training_args=training_args,
+        _train(output_dir=REPOSITORY_ID, training_args=training_args,
                     data_dict=data_dict, lora_args=lora_args, additional_run_args=train_comb_params,
                     is_cross_val=False, train_dataset_name=train_loo_few_name)
 
@@ -886,7 +863,7 @@ def train_loo_with_few():
 
 
 
-def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=None,
+def _train(output_dir=None, training_args=None, data_dict=None, lora_args=None,
                 additional_run_args={}, is_cross_val=False, cv_split_num=None,
                 train_dataset_name=args.train_dataset,
                 model_name=args.base_model_name, eval_datasets_names=args.eval_datasets):
@@ -909,7 +886,7 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
         trust_remote_code=True,
         # use_auth_token=True,
         token=hf_access_token,
-        cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache2/",
+        cache_dir=f"/cs/labs/dshahaf/mortur/HumorNLP_/{BASE_MODEL_NAME}/Cache2/",
         # config=config,
     )
     base_model.config.use_cache = False
@@ -950,7 +927,7 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               trust_remote_code=True,
                                               token=hf_access_token,
-                                              cache_dir="/cs/labs/dshahaf/mortur/HumorNLP_/Llama-2/Cache/")
+                                              cache_dir=f"/cs/labs/dshahaf/mortur/HumorNLP_/{BASE_MODEL_NAME}/Cache/")
     tokenizer.pad_token = tokenizer.eos_token
 
     # Change padding side to right for training
@@ -966,6 +943,8 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
 
     # train_dataset = dataset['train'] if data_dict is None else data_dict['train']
     print('$$$ Training on dataset with size:', len(train_dataset), '$$$')
+    # TODO Mor: I change it to None to see how it affects the training
+    args.max_seq_length = None
     print(f'&&& max seq length = {args.max_seq_length} &&&')
 
     trainer = SFTTrainer(
@@ -1000,7 +979,7 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
     eval_params['model_location'] = output_dir
 
     eval_start_time = time.time()
-    evaluate_llama(eval_params, additional_run_args, is_cross_val, cv_split_num)
+    evaluate(eval_params, additional_run_args, is_cross_val, cv_split_num)
     eval_end_time = time.time()
     print('@@@@@@@@@@@@@@@')
     print(f'Evaluation took {(eval_end_time - eval_start_time) / 60} minutes')
@@ -1018,13 +997,13 @@ def train_llama(output_dir=None, training_args=None, data_dict=None, lora_args=N
 
 if __name__ == '__main__':
     if args.task == 'TRAIN':
-        train_llama()
+        _train()
 
     if args.task == 'EVAL':
-        evaluate_llama()
+        evaluate()
 
     if args.task == 'TRAIN_HYPERPARAMS':
-        train_llama_hyperparams()
+        train_hyperparams()
 
     if args.task == 'LOO':
         train_loo()
