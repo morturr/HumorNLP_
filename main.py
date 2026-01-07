@@ -8,7 +8,7 @@ from Utils.utils import print_str, my_parse_args
 from datetime import datetime
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# wandb.login(key='94ee7285d2d25226f2c969e28645475f9adffbce')
+
 logger = logging.getLogger(__name__)
 
 

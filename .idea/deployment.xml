@@ -1,14 +1,64 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="Phoenix" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+    <option name="confirmBeforeUploading" value="false" />
     <serverData>
-      <paths name="Pheonix">
+      <paths name="MerRecSFTP">
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
+      <paths name="Phoenix">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/HumorNLP_" local="$PROJECT_DIR$" web="/" />
+            <mapping local="" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath path="/HumorNLP_/Mistral/Results/Old results/amazon-models/amazon-24-08-21/amazon_predictions.csv" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+      <paths name="machine">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/HumorNLP_" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="" local="" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="machine-sftp">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="" local="" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="mortur@ampere-01.cs.huji.ac.il:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/cs/labs/dshahaf/mortur/HumorNLP_" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="mortur@creek-03.cs.huji.ac.il:22 password">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="mortur@cyril-01.cs.huji.ac.il:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/cs/labs/dshahaf/mortur/HumorNLP_" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
     </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>

@@ -3,7 +3,7 @@ import os
 import pandas
 import pandas as pd
 from datasets import Dataset, DatasetDict, concatenate_datasets
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 
 from typing import Tuple, List
 
@@ -17,7 +17,6 @@ label2id = {"not funny": 0, "funny": 1}
 humorous2id = {"not humorous": 0, "humorous": 1}
 id2label = {id: label for label, id in label2id.items()}
 id2humorous = {id: label for label, id in humorous2id.items()}
-
 
 def create_instruction(version_idx):
     INSTRUCTION_VERSIONS = [
@@ -55,6 +54,12 @@ def create_instruction(version_idx):
                             "### Input:\n{text}\n\n" \
                             "### Response:\n"
 
+        # for Domain Classification
+        text_input_format = "Below is an instruction that describes a text classification task.\n\n" \
+                            "### Instruction:\nAnalyze the following text and classify to which domain it belongs." \
+                            "### Input:\n{text}\n\n" \
+                            "### Response:\n"
+
     def apply_to_row(row):
         return text_input_format.format(text=row['text'])  # , label=id2humorous[row['label']])
         # return text_to_model_format.format(text=row['text'])
@@ -68,10 +73,18 @@ def add_response(row):
     # row['instruction'] = row['instruction'] + id2humorous[row['label']]
     return row
 
+def add_domain_label_wrapper(dataset_name):
+    def add_domain_label(row):
+        row['instruction'] = row['instruction'] + dataset_name
+        return row
+
+    return add_domain_label
+
 
 def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
                  add_instruction: bool = False, instruction_version=0,
-                 with_val=True, train_size=None, test_percent=None) -> DatasetDict:
+                 with_val=True, train_size=None, test_percent=None,
+                 add_response_func=None) -> DatasetDict:
     """Load dataset."""
     if not data_file_path:
         data_file_path = ROOT_DIR + f"/Data/new_humor_datasets/balanced/{dataset_name}/data.csv"
@@ -109,19 +122,37 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
 
     # Actually use as evaluation set, when want to run many parameters and save test evaluation
     # Usually, test_percent = 0.1
-    if test_percent:
-        split_to_take = 'test'
-        # TODO Mor: not the best soultion, but the quickest. pay attention to it.
-        # if test_percent is 0.9, wer'e running on real test, and not on validation
-        if test_percent == 0.9:
-            test_percent = 0.1
-            split_to_take = 'train'
-            print('***', 'Running on real test set', '***', sep='\n')
 
-        test = test.train_test_split(test_size=test_percent, seed=42, stratify_by_column='label')[split_to_take]
+    if test_percent:
+        # Check if test_percent is a float or int
+        if int(test_percent) == test_percent:
+            test_percent = int(test_percent)
+
+        EVAL_PERCENT = 0.033
+        splits = test.train_test_split(test_size=EVAL_PERCENT, seed=42, stratify_by_column='label')
+        test_split, eval_split = splits['train'], splits['test']
+        if test_percent == EVAL_PERCENT:
+            test = eval_split
+        else:
+            print('ATTENTION: EVALUATING ON TEST SET, NOT ON VALIDATION SET!!!')
+            test = test_split
+            test = test.train_test_split(test_size=test_percent, seed=42, stratify_by_column='label')['test']
+
+        # # split_to_take = 'test'
+        # # TODO Mor: not the best soultion, but the quickest. pay attention to it.
+        # # if test_percent is 0.9, wer'e running on real test, and not on validation
+        # if test_percent == 0.9:
+        #     test_percent = 0.1
+        #     split_to_take = 'train'
+        #     print('***', 'Running on real test set', '***', sep='\n')
+        #
+        # test = test.train_test_split(test_size=test_percent, seed=42, stratify_by_column='label')[split_to_take]
 
     if add_instruction:
-        train = train.map(add_response)
+        if not add_response_func:
+            train = train.map(add_response)
+        else:
+            train = train.map(add_response_func)
 
     # gather everyone if you want to have a single DatasetDict
     dataset_dict = DatasetDict({
@@ -135,6 +166,47 @@ def load_dataset(dataset_name='amazon', percent=None, data_file_path=None,
                 dataset_dict[split] = dataset_dict[split].train_test_split(test_size=percent, seed=42, stratify_by_column='label')['test']
 
     return dataset_dict
+
+def load_dataset_domain_classification(datasets_names, num_of_samples=None, which_labels='all',
+                                       test_percent=0.033, data_percent=None):
+    all_data_train_df = pd.DataFrame()
+    all_data_test_df = pd.DataFrame()
+
+    if which_labels == 'all':
+        train_size = int(num_of_samples / len(datasets_names))
+    # if which_labels == 'positive' or 'negative' we take double samples from each dataset and filter later
+    else:
+        train_size = int(2 * num_of_samples / len(datasets_names))
+
+    for dataset_name in datasets_names:
+        dataset_dict = load_dataset(dataset_name=dataset_name, train_size=train_size, with_val=False,
+                                    test_percent=test_percent, add_instruction=True, instruction_version=None,
+                                    add_response_func=add_domain_label_wrapper(dataset_name),
+                                    percent=data_percent)
+        train_df = dataset_dict['train'].to_pandas()
+        test_df = dataset_dict['test'].to_pandas()
+
+        if which_labels == 'positive':
+            train_df = train_df[train_df['label'] == 1].reset_index(drop=True)
+            test_df = test_df[test_df['label'] == 1].reset_index(drop=True)
+        elif which_labels == 'negative':
+            train_df = train_df[train_df['label'] == 0].reset_index(drop=True)
+            test_df = test_df[test_df['label'] == 0].reset_index(drop=True)
+
+        train_df['domain_label'] = [dataset_name] * len(train_df)
+        test_df['domain_label'] = [dataset_name] * len(test_df)
+        all_data_train_df = pd.concat([all_data_train_df, train_df], ignore_index=True)
+        all_data_test_df = pd.concat([all_data_test_df, test_df], ignore_index=True)
+
+    all_data_train_df = all_data_train_df.sample(frac=1, random_state=42).reset_index(drop=True)  # shuffle the combined dataframe
+    all_data_test_df = all_data_test_df.sample(frac=1, random_state=42).reset_index(drop=True)  # shuffle the combined dataframe
+    train_dataset = Dataset.from_pandas(all_data_train_df)
+    test_dataset = Dataset.from_pandas(all_data_test_df)
+    train_dataset = train_dataset.class_encode_column("domain_label")
+    test_dataset = test_dataset.class_encode_column("domain_label")
+
+
+    return DatasetDict({'train': train_dataset, 'test': test_dataset})
 
 
 def load_current_LOO(train_names, test_name, all_datasets_dict, with_val,
@@ -180,29 +252,35 @@ def load_current_LOO(train_names, test_name, all_datasets_dict, with_val,
 
 
 def load_LOO_datasets(datasets, add_intructions=False, instruction_version=0,
-                      with_val=True, data_percent=None):
+                      with_val=True, data_percent=None, train_size=None,
+                      test_percent=None):
     """ load leave one out datasets"""
     all_datasets_dict = {}
 
     TRAIN_DATA_PERCENT = 1 / (len(datasets) - 1)
 
     for dataset in datasets:
-        all_datasets_dict[dataset] = load_dataset(dataset, train_size=TRAIN_DATA_PERCENT,
+        all_datasets_dict[dataset] = load_dataset(dataset,
+                                                  train_size=int(TRAIN_DATA_PERCENT * train_size)
+                                                        if train_size else TRAIN_DATA_PERCENT,
                                                   add_instruction=add_intructions,
                                                   instruction_version=instruction_version,
                                                   with_val=with_val,
-                                                  percent=data_percent)
+                                                  percent=data_percent,
+                                                  test_percent=test_percent)
 
     return all_datasets_dict
 
 
 def load_cv_dataset(num_of_split=5, dataset_name='amazon', percent=None,
                     data_file_path=None, add_instruction: bool = False,
-                    instruction_version=0, with_val=True
+                    instruction_version=0, with_val=True, train_size=None
                     ) -> Tuple[pandas.DataFrame, StratifiedKFold]:
 
     dataset_dict = load_dataset(dataset_name, percent, data_file_path,
-                                add_instruction, with_val, instruction_version)
+                                add_instruction, with_val, instruction_version,
+                                train_size=train_size
+                                )
 
     kf = StratifiedKFold(n_splits=num_of_split, shuffle=True, random_state=1)
 
@@ -211,18 +289,18 @@ def load_cv_dataset(num_of_split=5, dataset_name='amazon', percent=None,
     return train, kf
 
 def load_combined_dataset(datasets_names, percent=None, add_instruction: bool = False,
-                          instruction_version=0):
+                          instruction_version=0, train_size=None, test_percent=None):
 
     TRAIN_DATA_PERCENT = 1 / (len(datasets_names))
 
     combined_train = Dataset.from_dict({'text': [], 'label': []})
 
     for dataset in datasets_names:
-        curr_dataset_dict = load_dataset(dataset, train_size=TRAIN_DATA_PERCENT,
+        curr_dataset_dict = load_dataset(dataset, train_size=int(TRAIN_DATA_PERCENT * train_size),
                                                   add_instruction=add_instruction,
                                                   instruction_version=instruction_version,
                                                   with_val=False,
-                                                  percent=percent)
+                                                  percent=percent, test_percent=test_percent)
 
         combined_train = concatenate_datasets([combined_train, curr_dataset_dict['train']])
 
@@ -255,12 +333,21 @@ def stratified_sample(dataset, label_column, sample_fraction=0.1):
 
 
 if __name__ == "__main__":
-    loo_datasets = ['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews']
-    data_dict_pair = load_combined_dataset(datasets_names=['amazon', 'headlines'], add_instruction=True)
+    # dataset = load_dataset(dataset_name='amazon', percent=0.005,
+    #                        with_val=False)  # , test_percent = 0.033)
 
-    data = load_dataset(dataset_name='amazon', percent=0.1,
-                 add_instruction=False, instruction_version = 0,
-    with_val = False)
+
+    loo_datasets = ['amazon', 'dadjokes', 'headlines', 'one_liners']
+    data = load_dataset_domain_classification(datasets_names=loo_datasets, num_of_samples=5000)
+
+    # data_dict = load_LOO_datasets(datasets=loo_datasets, add_intructions=True, with_val=False,
+    #                               data_percent=1, train_size=5000,
+    #                               test_percent=0.033)
+    # data_dict_pair = load_combined_dataset(datasets_names=['amazon', 'headlines'], add_instruction=True)
+
+    # data = load_dataset(dataset_name='amazon',
+    #              add_instruction=True, instruction_version = 0, with_val = False, percent=1,
+    #                     train_size=1666)
     # data_dict = load_LOO_datasets(datasets=loo_datasets, add_intructions=True, with_val=False,
     #                               data_percent=1)
     # data_dict = load_current_LOO(train_names=loo_datasets, test_name='headlines',

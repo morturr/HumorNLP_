@@ -24,6 +24,8 @@ TABLES_PATH = PATH + '/Tables/'
 
 FINAL_RESULTS_PATH = PATH + '/Final Results'
 FINAL_RESULTS_TABLES_PATH = TABLES_PATH + 'Final Tables/'
+
+#TODO Mor For Final: comment out the commands below for final results evaluation
 PATH = FINAL_RESULTS_PATH
 TABLES_PATH = FINAL_RESULTS_TABLES_PATH
 
@@ -31,11 +33,15 @@ TABLES_PATH = FINAL_RESULTS_TABLES_PATH
 # # path for hyperparameter results
 # HYPERPARAMS_PATH = PATH + '/Hyperparameter search'
 
-DATASETS = ['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews']
+# DATASETS = ['amazon', 'dadjokes', 'headlines', 'one_liners', 'yelp_reviews']
+# PAIR_DATASETS = ['amazon_dadjokes', 'amazon_headlines', 'dadjokes_headlines',
+#                  'dadjokes_one_liners', 'headlines_one_liners', 'headlines_yelp_reviews',
+#                  'one_liners_amazon', 'one_liners_yelp_reviews',
+#                  'yelp_reviews_amazon', 'yelp_reviews_dadjokes']
+DATASETS = ['amazon', 'dadjokes', 'headlines', 'one_liners']
 PAIR_DATASETS = ['amazon_dadjokes', 'amazon_headlines', 'dadjokes_headlines',
-                 'dadjokes_one_liners', 'headlines_one_liners', 'headlines_yelp_reviews',
-                 'one_liners_amazon', 'one_liners_yelp_reviews',
-                 'yelp_reviews_amazon', 'yelp_reviews_dadjokes']
+                 'dadjokes_one_liners', 'headlines_one_liners',
+                 'one_liners_amazon']
 # DATASETS = ['amazon']
 
 def load_experiment_prefix():
@@ -121,17 +127,22 @@ else:
     raise ValueError(f'Unknown model: {USE_MODEL}')
 
 AVERAGE_COLUMNS_BY = 'seed'
-# AVERAGE_COLUMNS_BY = 'split_num'
+if args.experiment_type == 'HYPERPARAMS':
+    AVERAGE_COLUMNS_BY = 'split_num'  # Hyperparameters are averaged by split_num, not by seed
 
 if AVERAGE_COLUMNS_BY == 'split_num':
     PARAMS_COLUMN_NAMES = ['seed', 'learning_rate', 'per_device_train_batch_size',
-                       'per_device_eval_batch_size', 'max_steps', 'lora_rank', 'lora_alpha', ]
+                       'per_device_eval_batch_size', 'lora_rank', 'lora_alpha', 'num_train_epochs']
 elif AVERAGE_COLUMNS_BY == 'seed':
     # Because we want to average by seed, we need to remove the seed from the params columns
     # so it won't be included in the groupby index when computing the average
     PARAMS_COLUMN_NAMES = ['learning_rate', 'per_device_train_batch_size',
-                       'per_device_eval_batch_size', 'max_steps', 'lora_rank', 'lora_alpha', ]
+                       'per_device_eval_batch_size', 'lora_rank', 'lora_alpha', 'num_train_epochs']
 
+# if we are in a pair experiment, we need to add the dataset to the params columns
+# because sometimes several datasets (combs) have the same parameters
+if args.experiment_type == 'PAIR' or args.experiment_type == 'LOO':
+    PARAMS_COLUMN_NAMES.append('dataset')
 
 
 def load_score_table_from_files() -> pd.DataFrame:
@@ -182,7 +193,7 @@ def find_best_accuracies(df: pd.DataFrame, trained_dataset_name: str, which_best
     """
 
     accuracies = {}
-    best_trained, best_median = (-1, None), (-1, None)
+    best_trained, best_median, best_others_median = (-1, None), (-1, None), (-1, None)
 
     trained_dataset_names = [dataset_name for dataset_name in DATASETS if dataset_name in trained_dataset_name]
 
@@ -191,15 +202,20 @@ def find_best_accuracies(df: pd.DataFrame, trained_dataset_name: str, which_best
             row_trained = rows[rows['evaluate_dataset'] == trained_dataset_names[0]]
         elif len(trained_dataset_names) > 1:
             row_trained = rows[rows['evaluate_dataset'].isin(trained_dataset_names)]
-        # row_others = rows[rows['evaluate_dataset'] != trained_dataset_name]
+        row_others = rows[rows['evaluate_dataset'] != trained_dataset_name]
         curr_trained_accuracy = row_trained['accuracy'].mean()
-        others_accuracy_median = rows['accuracy'].median()
+        all_accuracy_median = rows['accuracy'].median()
+        other_accuracy_median = row_others['accuracy'].median()
 
         best_trained = (curr_trained_accuracy, params) if curr_trained_accuracy > best_trained[0] else best_trained
-        best_median = (others_accuracy_median, params) if others_accuracy_median > best_median[0] else best_median
+        best_median = (all_accuracy_median, params) if all_accuracy_median > best_median[0] else best_median
+        best_others_median = (other_accuracy_median, params) if \
+            other_accuracy_median > best_others_median[0] else best_others_median
 
         curr_accs = {'trained': curr_trained_accuracy,
-                     'median': others_accuracy_median}
+                     'median': all_accuracy_median,
+                     'others_median': other_accuracy_median
+                     }
 
         accuracies[params] = curr_accs
 
@@ -209,7 +225,8 @@ def find_best_accuracies(df: pd.DataFrame, trained_dataset_name: str, which_best
 
     if which_best == 'All':
         return accuracies, {'best_trained': best_trained,
-                            'best_median': best_median}
+                            'best_median': best_median,
+                            'best_others_median': best_others_median}
 
     # Return only best median
     if which_best == 'Median':
@@ -221,7 +238,9 @@ def init_result_param_df():
     This function initializes a dataframe with the template of the results
     :return: df: a dataframe with the template of the results
     """
-    df = pd.read_excel(TABLES_PATH + 'result_param_metric_template.xlsx')
+    # df = pd.read_excel(TABLES_PATH + 'result_param_metric_template.xlsx')
+    #TODO Mor: std file
+    df = pd.read_excel(TABLES_PATH + 'result_param_metric_template_std.xlsx')
     df.fillna(method='ffill', axis=0, inplace=True)
     df.set_index(['metric', 'model', 'trained on', 'param_metric'], inplace=True)
 
@@ -245,38 +264,46 @@ def get_avg_single_df(df: pd.DataFrame, average_by: str) -> pd.DataFrame:
 
 
     #TODO Mor For Final: comment the command below and comment out two rows below beacuse final files don't have params
-    for params, rows in df.groupby(by=PARAMS_COLUMN_NAMES):
-    # for rows in [df]: ## for final files who don't have params
-        if len(rows) != 20:
-            print(f'Error in dataset {rows.iloc[0]["train_dataset"]}:\n'
-                  f' Expected 20 rows for params {params}, got {len(rows)}')
-            rows_datasets_lst = rows['dataset'].unique()
-            for dataset in rows_datasets_lst:
-                assert len(rows[rows['dataset'] == dataset]) == 20,\
-                    f'Expected 20 rows for params {params} (4 seeds, 5 evaluate datasets), got {len(rows[rows["dataset"] == dataset])}'
-            selected_dataset = rows_datasets_lst[random.randint(0, len(rows_datasets_lst) - 1)]
-            print(f'** There are several datasets = {rows_datasets_lst} with same params = {params}. Using results of {selected_dataset} **')
-            rows = rows[rows['dataset'] == selected_dataset]
-
-            # raise AssertionError(f'Expected 20 rows for params {params}, got {len(rows)}')
-        # assert len(rows) == 20, f'Expected 20 rows for params {params} (4 seeds, 5 evaluate datasets), got {len(rows)}'
-        # assert len(rows) == 5, f'Expected 5 rows for params {params} (1 seed 1 split, 5 evaluate datasets), got {len(rows)}'
-        # if len(rows) != 5:
-        #     continue
+    # for params, rows in df.groupby(by=PARAMS_COLUMN_NAMES):
+    for rows in [df]: ## for final files who don't have params
+        # if len(rows) != 16:
+            # print(f'Error in dataset {rows.iloc[0]["train_dataset"]}:\n'
+            #       f' Expected 16 rows for params {params}, got {len(rows)}')
+            # # rows_datasets_lst = rows['train_dataset'].unique() # Use this in case of ???
+            # rows_datasets_lst = rows['dataset'].unique() # Use this in case of PAIR datasets
+            # for dataset in rows_datasets_lst:
+            #     assert len(rows[rows['dataset'] == dataset]) == 16,\
+            #         f'Expected 16 rows for params {params} (4 seeds, 4 evaluate datasets), got {len(rows[rows["dataset"] == dataset])}'
+            # selected_dataset = rows_datasets_lst[random.randint(0, len(rows_datasets_lst) - 1)]
+            # print(f'** There are several datasets = {rows_datasets_lst} with same params = {params}. Using results of {selected_dataset} **')
+            # rows = rows[rows['dataset'] == selected_dataset]
+            #
+            #     # raise AssertionError(f'Expected 20 rows for params {params}, got {len(rows)}')
+            # assert len(rows) == 16, f'Expected 16 rows for params {params} (4 seeds, 4 evaluate datasets), got {len(rows)}'
+        # # assert len(rows) == 5, f'Expected 5 rows for params {params} (1 seed 1 split, 5 evaluate datasets), got {len(rows)}'
+        # # if len(rows) != 5:
+        # #     continue
 
         for dataset_name in DATASETS:
             rows_of_dataset = rows[rows['evaluate_dataset'] == dataset_name]
 
             # Calculate the mean for the relevant columns
             mean_values = rows_of_dataset[columns_to_average].mean()
+            # TODO Mor For Final: add std
+            std_value = rows_of_dataset[columns_to_average]['accuracy'].std()
 
             # Prepare a new row with average values and other relevant info
             # For example, 'split' can be labeled as 'average'
             new_row = rows_of_dataset.iloc[0].copy(deep=True)
-
             new_row.update(mean_values)
             new_row.update({average_by: 'average'})
-            new_row_df = pd.DataFrame([new_row], columns=df.columns)
+            # TODO Mor For Final: add std to the new row
+            #TODO Mor: Replace these three rows with new_row_df=...
+            new_row['std'] = std_value
+            columns = list(df.columns) + ['std']
+            new_row_df = pd.DataFrame([new_row], columns=columns)
+
+            # new_row_df = pd.DataFrame([new_row], columns=df.columns)
 
             if df_avg.empty:
                 df_avg = new_row_df
@@ -303,7 +330,7 @@ def get_avg_df_all(df: pd.DataFrame, average_by: str) -> pd.DataFrame:
         df_curr_trained = df[(df['train_dataset'] == dataset_name)]
 
         # TODO Mor For Final: comment command below because no params in final files
-        df_curr_trained.set_index(PARAMS_COLUMN_NAMES, inplace=True)
+        # df_curr_trained.set_index(PARAMS_COLUMN_NAMES, inplace=True)
 
         try:
             df_curr_trained_avg = get_avg_single_df(df_curr_trained, average_by)
@@ -360,15 +387,17 @@ def save_best_accuracies(result_param_df: pd.DataFrame, df_trained: pd.DataFrame
     # calculate metrics' mean and std for all pairs of datasets
     # TODO Mor For Final:  replace commented code with below (until metrics_dict=)
     #  because final results don't have params and best accs
-    # for _ in range(1): # for final
-    #     df_of_params = df_trained
-    #     metrics_dict = {metric_name: {} for metric_name in METRICS}
-    #     acc_selection_mertic = 'final results'
-    for acc_selection_mertic, acc_and_params in best_accs.items():
-        params = acc_and_params[1]
-
-        df_of_params = df_trained.at[params]
+    for _ in range(1): # for final
+        df_of_params = df_trained
         metrics_dict = {metric_name: {} for metric_name in METRICS}
+        #TODO Mor: add std
+        metrics_dict.update({'std': {}})
+        acc_selection_mertic = 'final results'
+    # for acc_selection_mertic, acc_and_params in best_accs.items():
+    #     params = acc_and_params[1]
+
+        # df_of_params = df_trained.at[params]
+        # metrics_dict = {metric_name: {} for metric_name in METRICS}
 
         # for each accuracy metric, calculate the mean and std of METRICS over all datasets
         for eval_dataset in DATASETS:
@@ -379,8 +408,13 @@ def save_best_accuracies(result_param_df: pd.DataFrame, df_trained: pd.DataFrame
                 mean, std = values.mean(), values.std()
                 metrics_dict[metric][eval_dataset] = float("%.4f" % mean)
 
+            # TODO Mor: add std
+            metrics_dict['std'][eval_dataset] = float("%.4f" % df['std'])
+
         for metric in METRICS:
             result_param_df.loc[(metric, BASE_MODEL, dataset_name, acc_selection_mertic)] = metrics_dict[metric]
+        #TODO Mor: add std
+        result_param_df.loc[('std', BASE_MODEL, dataset_name, acc_selection_mertic)] = metrics_dict['std']
 
 def get_top_params(df_trained: pd.DataFrame, dataset_name: str,
                    best_accs: Dict[str, Tuple[int, Tuple[int]]], all_accs: Tuple[Dict[Tuple[int], Dict[str, int]]])\
@@ -447,23 +481,25 @@ def create_accuracy_top_params_all_datasets(result_param_df: pd.DataFrame, df_av
         # Return two parameters: dictionary of all params & accuracies, and dictionary of the best accuracies
         # TODO Mor For Final: comment the commands below because final results don't have params and best accs
         # # TODO Mor: change to get all best, and take the best by trained accuracy
-        accs_and_best_accs = find_best_accuracies(df_curr_trained, dataset_name, which_best='Median')
-        # # accs_and_best_accs = find_best_accuracies(df_curr_trained, dataset_name, which_best='All')
+        # accs_and_best_accs = find_best_accuracies(df_curr_trained, dataset_name, which_best='Median')
+        # accs_and_best_accs = find_best_accuracies(df_curr_trained, dataset_name, which_best='All')
 
-        all_accs = accs_and_best_accs[0]
-        best_accs = accs_and_best_accs[1]
+        # all_accs = accs_and_best_accs[0]
+        # best_accs = accs_and_best_accs[1]
+
 
         # TODO Mor For Final: replace the command below because final results don't have params and best accs
-        # save_best_accuracies(result_param_df, df_curr_trained, dataset_name, None) # for final
-        save_best_accuracies(result_param_df, df_curr_trained, dataset_name, best_accs)
-        curr_dataset_top_params = get_top_params(df_curr_trained, dataset_name, best_accs, all_accs)
-        all_top_params.extend(curr_dataset_top_params)
+        save_best_accuracies(result_param_df, df_curr_trained, dataset_name, None) # for final
+
+        # save_best_accuracies(result_param_df, df_curr_trained, dataset_name, best_accs)
+        # curr_dataset_top_params = get_top_params(df_curr_trained, dataset_name, best_accs, all_accs)
+        # all_top_params.extend(curr_dataset_top_params)
 
     # TODO Mor For Final: comment the code below because final results don't have params
-    # return pd.DataFrame() # for final
-    top_params_df = pd.DataFrame(all_top_params)
-    top_params_df.set_index(['dataset', 'param_metric', 'top'], inplace=True)
-    return top_params_df
+    return pd.DataFrame() # for final
+    # top_params_df = pd.DataFrame(all_top_params)
+    # top_params_df.set_index(['dataset', 'param_metric', 'top'], inplace=True)
+    # return top_params_df
 
 
 if __name__ == '__main__':

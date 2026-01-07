@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="RemoteMappingsManager">
+    <list>
+      <list>
+        <remote-mappings server-id="python@sftp://mortur@binky-04.cs.huji.ac.il:22/cs/labs/dshahaf/mortur/HumorNLP_/hum_venv/bin/python">
+          <settings>
+            <list>
+              <mapping local-root="$PROJECT_DIR$" remote-root="/cs/labs/dshahaf/mortur/HumorNLP_" />
+            </list>
+          </settings>
+        </remote-mappings>
+        <remote-mappings server-id="python@sftp://mortur@binky-04.cs.huji.ac.il:22/cs/labs/dshahaf/mortur/HumorNLP_/venv_new/bin/python">
+          <settings>
+            <list>
+              <mapping local-root="$PROJECT_DIR$" remote-root="/cs/labs/dshahaf/mortur/HumorNLP_" />
+            </list>
+          </settings>
+        </remote-mappings>
+        <remote-mappings server-id="python@sftp://mortur@binky-04.cs.huji.ac.il:22/cs/labs/dshahaf/mortur/HumorNLP_/venv_new/bin/python3.10">
+          <settings>
+            <list>
+              <mapping local-root="$PROJECT_DIR$" remote-root="/cs/labs/dshahaf/mortur/HumorNLP_" />
+            </list>
+          </settings>
+        </remote-mappings>
+      </list>
+    </list>
+  </component>
+</project>

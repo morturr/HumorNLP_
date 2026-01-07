@@ -170,12 +170,12 @@ def evaluate_with_cv(data_dict, run_args):
         print(report)
 
 
-def create_report(labels_list, predictions_list, run_args, pos_label=1):
+def create_report(labels_list, predictions_list, run_args, pos_label=1, average='binary'):
     report = classification_report(labels_list, predictions_list)
     accuracy = accuracy_score(labels_list, predictions_list)
-    precision = precision_score(labels_list, predictions_list, pos_label=pos_label)
-    recall = recall_score(labels_list, predictions_list, pos_label=pos_label)
-    f1 = f1_score(labels_list, predictions_list, pos_label=pos_label)
+    precision = precision_score(labels_list, predictions_list, pos_label=pos_label, average=average)
+    recall = recall_score(labels_list, predictions_list, pos_label=pos_label, average=average)
+    f1 = f1_score(labels_list, predictions_list, pos_label=pos_label, average=average)
 
     if 'save_dir' in run_args:
         result_path = run_args['save_dir']
