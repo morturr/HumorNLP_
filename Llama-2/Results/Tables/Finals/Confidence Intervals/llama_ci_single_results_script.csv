@@ -1,0 +1,17 @@
+Trained On,Tested On,Accuracy,95% CI (ME),CI Lower Bound,CI Upper Bound
+amazon,amazon,0.8823,±0.0027,0.8796,0.885
+amazon,dadjokes,0.6515,±0.0266,0.6249,0.6781
+amazon,headlines,0.6539,±0.0191,0.6348,0.673
+amazon,one_liners,0.6111,±0.0224,0.5887,0.6335
+dadjokes,amazon,0.6263,±0.064,0.5623,0.6903
+dadjokes,dadjokes,0.9279,±0.0073,0.9206,0.9352
+dadjokes,headlines,0.5932,±0.0329,0.5603,0.6261
+dadjokes,one_liners,0.7009,±0.0234,0.6775,0.7243
+headlines,amazon,0.5807,±0.0075,0.5732,0.5882
+headlines,dadjokes,0.5678,±0.0102,0.5576,0.578
+headlines,headlines,0.9021,±0.0072,0.8949,0.9093
+headlines,one_liners,0.6543,±0.0165,0.6378,0.6708
+one_liners,amazon,0.6233,±0.0057,0.6176,0.629
+one_liners,dadjokes,0.6184,±0.014,0.6044,0.6324
+one_liners,headlines,0.54,±0.0132,0.5268,0.5532
+one_liners,one_liners,0.8677,±0.0072,0.8605,0.8749

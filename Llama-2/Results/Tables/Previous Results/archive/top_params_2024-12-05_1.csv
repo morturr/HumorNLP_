@@ -1,0 +1,13 @@
+dataset,param_metric,top,learning_rate,per_device_train_batch_size,per_device_eval_batch_size,max_steps,lora_rank,lora_alpha,median_accuracy
+LOO_amazon,best_median,1,0.0003,4,4,200,64,64,0.8755
+LOO_amazon,best_median,2,0.0003,4,4,200,32,8,0.8172
+LOO_amazon,best_median,3,0.0003,2,2,200,32,16,0.8109
+LOO_dadjokes,best_median,1,0.0003,4,4,200,64,64,0.8430
+LOO_dadjokes,best_median,2,0.0003,2,2,200,32,16,0.8068
+LOO_dadjokes,best_median,3,0.0003,2,2,150,32,16,0.7775
+LOO_headlines,best_median,1,0.0003,4,4,200,64,64,0.8423
+LOO_headlines,best_median,2,0.0003,4,4,200,32,8,0.8074
+LOO_headlines,best_median,3,0.0003,2,2,150,64,32,0.7793
+LOO_one_liners,best_median,1,0.0003,2,2,200,32,16,0.8142
+LOO_one_liners,best_median,2,0.0003,4,4,200,32,8,0.8137
+LOO_one_liners,best_median,3,0.0003,4,4,150,128,8,0.7739

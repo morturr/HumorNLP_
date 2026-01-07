@@ -1,0 +1,5 @@
+train_dataset,evaluate_dataset,model_name,save_dir,accuracy,precision,recall,f1
+PAIR_one_liners_amazon,amazon,Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,../Results/Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,0.9004444444444445,0.9168207024029574,0.8809946714031972,0.8985507246376812
+PAIR_one_liners_amazon,dadjokes,Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,../Results/Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,0.5377777777777778,0.5198889916743756,0.9982238010657194,0.683698296836983
+PAIR_one_liners_amazon,headlines,Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,../Results/Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,0.752,0.7886178861788617,0.6891651865008881,0.7355450236966825
+PAIR_one_liners_amazon,one_liners,Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,../Results/Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-18-2025-06-13,0.9431111111111111,0.9463327370304114,0.9396092362344582,0.9429590017825312

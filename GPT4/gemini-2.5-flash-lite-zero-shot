@@ -1,0 +1,62 @@
+@@@ Evaluating on amazon dataset. Examples count = 126 @@@
+@@@ Classification report for amazon dataset @@@
+              precision    recall  f1-score   support
+
+           0       0.64      0.92      0.76        63
+           1       0.86      0.49      0.63        63
+
+    accuracy                           0.71       126
+   macro avg       0.75      0.71      0.69       126
+weighted avg       0.75      0.71      0.69       126
+
+Illegal predictions found in 1 examples
+Illegal Responses:
+Index: 94, Response: Funny.
+
+The humor comes from the **irony** of losing a mood ring precisely when you're unsure how you feel. It plays on the intended function of the mood ring to reflect one's emotional state. The phrase "Not sure how I feel about this..." is a direct, literal statement that cleverly highlights the absurdity of the situation, making it humorous.
+@@@ Classification report for dadjokes dataset @@@
+              precision    recall  f1-score   support
+
+           0       0.84      0.75      0.79        63
+           1       0.77      0.85      0.81        62
+
+    accuracy                           0.80       125
+   macro avg       0.80      0.80      0.80       125
+weighted avg       0.80      0.80      0.80       125
+
+
+Illegal predictions found in 1 examples
+Illegal Responses:
+Index: 42, Response: Funny.
+
+**Reasoning:** The humor comes from the personification of an inanimate object ("measuring spoon") and the absurd notion of it having a "life" and making a decision to "look back." The phrase "detached from ring" implies a sense of freedom and perhaps even independence for the spoon, which is a playful and silly image.
+@@@ Classification report for headlines dataset @@@
+              precision    recall  f1-score   support
+
+           0       0.55      0.97      0.70        63
+           1       0.86      0.19      0.32        62
+
+    accuracy                           0.58       125
+   macro avg       0.70      0.58      0.51       125
+weighted avg       0.70      0.58      0.51       125
+
+Illegal predictions found in 3 examples
+Illegal Responses:
+Index: 105, Response: Funny.
+
+The humor in this statement comes from the **absurdity** and **exaggeration**. It presents a seemingly straightforward observation about spinach and then elevates it with a comical, nonsensical comparison. The phrase "worse than everything" is a hyperbolic statement that creates a humorous contrast with the more neutral "better than nothing."
+Index: 103, Response: Funny
+
+**Reasoning:** The humor lies in the unexpected twist and dark irony. The common idiom "Birds of a feather flock together" implies unity and belonging. By adding "make a good target," the statement subverts this positive connotation with a dark, humorous observation about vulnerability. It's a witty and absurd play on words, creating a punchline from a familiar phrase.
+Index: 57, Response: Funny.
+
+**Reasoning:** The humor comes from the absurd and unexpected juxtaposition of a violent and potentially deadly activity like dueling with a mundane and altruistic requirement like being a registered blood donor. The idea that this civic duty would somehow legitimize or temper the act of dueling is inherently comical due to its illogical and out-of-place nature. It plays on the expectation that legal requirements for dangerous activities would be related to safety precautions or licensing, not a blood donation status.
+@@@ Classification report for one_liners dataset @@@
+              precision    recall  f1-score   support
+
+           0       0.66      0.97      0.79        63
+           1       0.94      0.48      0.64        60
+
+    accuracy                           0.73       123
+   macro avg       0.80      0.73      0.71       123
+weighted avg       0.80      0.73      0.71       123

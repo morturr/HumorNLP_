@@ -1,0 +1,5 @@
+train_dataset,evaluate_dataset,model_name,save_dir,accuracy,precision,recall,f1
+PAIR_amazon_dadjokes,amazon,Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,../Results/Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,0.8905693950177936,0.9229287090558767,0.8523131672597865,0.8862164662349676
+PAIR_amazon_dadjokes,dadjokes,Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,../Results/Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,0.952,0.9652650822669104,0.9378330373001776,0.9513513513513514
+PAIR_amazon_dadjokes,headlines,Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,../Results/Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,0.7337488869100623,0.7937219730941704,0.6310160427807486,0.7030784508440914
+PAIR_amazon_dadjokes,one_liners,Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,../Results/Mistral-7B-v0.1-PAIR_amazon_dadjokes-COMB-amazon-comb-2-seed-18-2025-06-11,0.715939447907391,0.9013157894736842,0.4866785079928952,0.6320645905420992

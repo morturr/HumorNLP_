@@ -1,0 +1,52 @@
+model name: Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-28-2025-06-13
+train dataset: PAIR_one_liners_amazon
+evaluate dataset: amazon
+              precision    recall  f1-score   support
+
+           0       0.87      0.94      0.90       562
+           1       0.93      0.86      0.89       563
+
+    accuracy                           0.90      1125
+   macro avg       0.90      0.90      0.90      1125
+weighted avg       0.90      0.90      0.90      1125
+
+*************
+model name: Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-28-2025-06-13
+train dataset: PAIR_one_liners_amazon
+evaluate dataset: dadjokes
+              precision    recall  f1-score   support
+
+           0       0.98      0.07      0.13       562
+           1       0.52      1.00      0.68       563
+
+    accuracy                           0.54      1125
+   macro avg       0.75      0.53      0.41      1125
+weighted avg       0.75      0.54      0.41      1125
+
+*************
+model name: Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-28-2025-06-13
+train dataset: PAIR_one_liners_amazon
+evaluate dataset: headlines
+              precision    recall  f1-score   support
+
+           0       0.72      0.78      0.75       562
+           1       0.76      0.69      0.72       563
+
+    accuracy                           0.74      1125
+   macro avg       0.74      0.74      0.74      1125
+weighted avg       0.74      0.74      0.74      1125
+
+*************
+model name: Mistral-7B-v0.1-PAIR_one_liners_amazon-COMB-amazon-comb-1-seed-28-2025-06-13
+train dataset: PAIR_one_liners_amazon
+evaluate dataset: one_liners
+              precision    recall  f1-score   support
+
+           0       0.94      0.95      0.94       562
+           1       0.95      0.94      0.94       563
+
+    accuracy                           0.94      1125
+   macro avg       0.94      0.94      0.94      1125
+weighted avg       0.94      0.94      0.94      1125
+
+*************

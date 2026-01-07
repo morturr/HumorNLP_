@@ -1,0 +1,6 @@
+dataset,param_metric,top,learning_rate,per_device_train_batch_size,per_device_eval_batch_size,max_steps,lora_rank,lora_alpha,median_accuracy,model_name
+LOO_WITH_FEW_amazon,best_median,1,0.0003,4,4,200,64,64,0.8791,Llama-2-7b-hf-LOO_amazon-COMB_one_liners-comb2-seed7-NEW2024-11-26
+LOO_WITH_FEW_dadjokes,best_median,1,0.0003,4,4,200,64,64,0.8299,Llama-2-7b-hf-LOO_dadjokes-COMB_one_liners-comb2-seed28-NEW2024-11-27
+LOO_WITH_FEW_headlines,best_median,1,0.0003,4,4,200,64,64,0.8410,Llama-2-7b-hf-LOO_headlines-COMB_one_liners-comb2-seed28-NEW2024-11-28
+LOO_WITH_FEW_one_liners,best_median,1,0.0003,2,2,200,32,16,0.8063,Llama-2-7b-hf-LOO_one_liners-COMB_headlines-comb2-seed42-NEW2024-11-27
+LOO_WITH_FEW_yelp_reviews,best_median,1,0.0003,4,4,200,64,64,0.8726,Llama-2-7b-hf-LOO_yelp_reviews-COMB_one_liners-comb2-seed42-NEW2024-11-29

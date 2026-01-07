@@ -1,0 +1,25 @@
+Trained On,Tested On,Accuracy,95% CI (ME),CI Lower Bound,CI Upper Bound
+PAIR_amazon_dadjokes,amazon,0.8247,±0.008,0.8167,0.8327
+PAIR_amazon_dadjokes,dadjokes,0.8953,±0.0121,0.8832,0.9074
+PAIR_amazon_dadjokes,headlines,0.6704,±0.0175,0.6529,0.6879
+PAIR_amazon_dadjokes,one_liners,0.6926,±0.0186,0.674,0.7112
+PAIR_amazon_headlines,amazon,0.8208,±0.0054,0.8154,0.8262
+PAIR_amazon_headlines,dadjokes,0.6197,±0.0108,0.6089,0.6305
+PAIR_amazon_headlines,headlines,0.895,±0.004,0.891,0.899
+PAIR_amazon_headlines,one_liners,0.686,±0.0185,0.6675,0.7045
+PAIR_dadjokes_headlines,amazon,0.6271,±0.0366,0.5905,0.6637
+PAIR_dadjokes_headlines,dadjokes,0.8942,±0.0127,0.8815,0.9069
+PAIR_dadjokes_headlines,headlines,0.9169,±0.0084,0.9085,0.9253
+PAIR_dadjokes_headlines,one_liners,0.7083,±0.0234,0.6849,0.7317
+PAIR_dadjokes_one_liners,amazon,0.738,±0.0175,0.7205,0.7555
+PAIR_dadjokes_one_liners,dadjokes,0.8971,±0.0083,0.8888,0.9054
+PAIR_dadjokes_one_liners,headlines,0.6507,±0.0146,0.6361,0.6653
+PAIR_dadjokes_one_liners,one_liners,0.9124,±0.0059,0.9065,0.9183
+PAIR_headlines_one_liners,amazon,0.6326,±0.0239,0.6087,0.6565
+PAIR_headlines_one_liners,dadjokes,0.549,±0.0267,0.5223,0.5757
+PAIR_headlines_one_liners,headlines,0.9278,±0.0078,0.92,0.9356
+PAIR_headlines_one_liners,one_liners,0.9202,±0.0038,0.9164,0.924
+PAIR_one_liners_amazon,amazon,0.8613,±0.0057,0.8556,0.867
+PAIR_one_liners_amazon,dadjokes,0.5559,±0.0328,0.5231,0.5887
+PAIR_one_liners_amazon,headlines,0.6529,±0.0293,0.6236,0.6822
+PAIR_one_liners_amazon,one_liners,0.9133,±0.0037,0.9096,0.917

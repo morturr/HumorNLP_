@@ -1,0 +1,16 @@
+dataset,param_metric,top,learning_rate,per_device_train_batch_size,per_device_eval_batch_size,max_steps,lora_rank,lora_alpha,median_accuracy,model_name
+LOO_amazon,best_median,1,0.0003,4,4,200,64,64,0.8755,Llama-2-7b-hf-LOO_amazon-COMB_one_liners-comb2-seed7-NEW2024-11-26
+LOO_amazon,best_median,2,0.0003,4,4,200,32,8,0.8172,Llama-2-7b-hf-LOO_amazon-COMB_dadjokes-comb1-seed7-NEW2024-11-28
+LOO_amazon,best_median,3,0.0003,2,2,200,32,16,0.8109,Llama-2-7b-hf-LOO_amazon-COMB_headlines-comb2-seed42-NEW2024-11-28
+LOO_dadjokes,best_median,1,0.0003,4,4,200,64,64,0.843,Llama-2-7b-hf-LOO_dadjokes-COMB_one_liners-comb2-seed28-NEW2024-11-27
+LOO_dadjokes,best_median,2,0.0003,2,2,200,32,16,0.8068,Llama-2-7b-hf-LOO_dadjokes-COMB_headlines-comb2-seed28-NEW2024-11-28
+LOO_dadjokes,best_median,3,0.0003,2,2,150,32,16,0.7775,Llama-2-7b-hf-LOO_dadjokes-COMB_headlines-comb1-seed7-NEW2024-11-27
+LOO_headlines,best_median,1,0.0003,4,4,200,64,64,0.8423,Llama-2-7b-hf-LOO_headlines-COMB_one_liners-comb2-seed28-NEW2024-11-28
+LOO_headlines,best_median,2,0.0003,4,4,200,32,8,0.8074,Llama-2-7b-hf-LOO_headlines-COMB_dadjokes-comb1-seed28-NEW2024-11-30
+LOO_headlines,best_median,3,0.0003,2,2,150,64,32,0.7793,Llama-2-7b-hf-LOO_headlines-COMB_amazon-comb2-seed18-NEW2024-11-26
+LOO_one_liners,best_median,1,0.0003,2,2,200,32,16,0.8142,Llama-2-7b-hf-LOO_one_liners-COMB_headlines-comb2-seed42-NEW2024-11-27
+LOO_one_liners,best_median,2,0.0003,4,4,200,32,8,0.8137,Llama-2-7b-hf-LOO_one_liners-COMB_dadjokes-comb1-seed28-NEW2024-11-28
+LOO_one_liners,best_median,3,0.0003,4,4,150,128,8,0.7739,Llama-2-7b-hf-LOO_one_liners-COMB_dadjokes-comb2-seed18-NEW2024-11-29
+LOO_yelp_reviews,best_median,1,0.0003,4,4,200,64,64,0.8725,Llama-2-7b-hf-LOO_yelp_reviews-COMB_one_liners-comb2-seed42-NEW2024-11-29
+LOO_yelp_reviews,best_median,2,0.0003,2,2,200,32,16,0.8289,Llama-2-7b-hf-LOO_yelp_reviews-COMB_headlines-comb2-seed42-NEW2024-12-05
+LOO_yelp_reviews,best_median,3,0.0003,2,2,150,64,32,0.814,Llama-2-7b-hf-LOO_yelp_reviews-COMB_amazon-comb2-seed18-NEW2024-11-28
